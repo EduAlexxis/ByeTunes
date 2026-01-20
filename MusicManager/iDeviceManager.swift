@@ -17,6 +17,9 @@ typealias IdeviceErrorCode = UnsafeMutablePointer<IdeviceFfiError>?
 
 let IdeviceSuccess: IdeviceErrorCode = nil
 
+// Anti-Ghost Build Version - INCREMENT THIS BEFORE EACH BUILD!
+private let BUILD_VERSION = "v1.0.7"
+
 class DeviceManager: ObservableObject {
     @Published var heartbeatReady: Bool = false
     @Published var connectionStatus: String = "Disconnected"
@@ -30,11 +33,14 @@ class DeviceManager: ObservableObject {
     }
     
     private init() {
+        print("===========================================")
+        print("[DeviceManager] BUILD VERSION: \(BUILD_VERSION)")
+        print("===========================================")
         print("[DeviceManager] Initializing...")
         let logPath = URL.documentsDirectory.appendingPathComponent("idevice-logs.txt").path
         let cString = strdup(logPath)
         defer { free(cString) }
-        idevice_init_logger(Debug, Disabled, cString)
+        idevice_init_logger(Info, Disabled, cString)
     }
 
     // MARK: - Heartbeat Connection
@@ -400,10 +406,14 @@ class DeviceManager: ObservableObject {
             afc_client_connect(self.provider, &afc)
             
             guard afc != nil else {
-                print("[DeviceManager] ERROR: AFC client is nil")
+                print("[DeviceManager] ERROR: AFC client is nil for upload")
                 completion(false)
                 return
             }
+            
+            // Ensure parent directory exists before opening file for write
+            let parentDir = (remotePath as NSString).deletingLastPathComponent
+            afc_make_directory(afc, parentDir)
             
             afc_file_open(afc, remotePath, AfcWrOnly, &file)
             
@@ -423,6 +433,23 @@ class DeviceManager: ObservableObject {
                     }
                 }
                 // print("[DeviceManager] Write complete")
+                
+                afc_file_close(file)
+                
+                // Verify file existence using simple open check
+                var checkFile: AfcFileHandle?
+                let ret = afc_file_open(afc, remotePath, AfcRdOnly, &checkFile)
+                if ret == nil { // nil return means success (no error) for IdeviceFfiError pointers
+                    if checkFile != nil {
+                        afc_file_close(checkFile)
+                    }
+                    afc_client_free(afc)
+                    completion(true)
+                } else {
+                    print("[DeviceManager] ERROR: Verification failed for \(remotePath)")
+                    afc_client_free(afc)
+                    completion(false)
+                }
             } else {
                 print("[DeviceManager] ERROR: Could not read file data")
                 afc_file_close(file)
@@ -430,10 +457,6 @@ class DeviceManager: ObservableObject {
                 completion(false)
                 return
             }
-            
-            afc_file_close(file)
-            afc_client_free(afc)
-            completion(true)
         }
     }
     
@@ -475,6 +498,8 @@ class DeviceManager: ObservableObject {
             semShm.wait()
             
             // Step 2: Create/Connect AFC and setup directories
+            progress("Setting up directories...")
+            print("[DeviceManager] Step 2: Setting up directories")
             var afc: AfcClientHandle?
             afc_client_connect(self.provider, &afc)
             
@@ -488,20 +513,27 @@ class DeviceManager: ObservableObject {
             afc_remove_path(afc, "/iTunes_Control/iTunes/MediaLibrary.sqlitedb-shm")
             afc_remove_path(afc, "/iTunes_Control/iTunes/MediaLibrary.sqlitedb-wal")
             
-            // Create directories
+            // Create ALL necessary directories (including parents)
+            afc_make_directory(afc, "/iTunes_Control")
+            afc_make_directory(afc, "/iTunes_Control/Music")
             afc_make_directory(afc, "/iTunes_Control/Music/F00")
             afc_make_directory(afc, "/iTunes_Control/iTunes")
+            afc_make_directory(afc, "/iTunes_Control/iTunes/Artwork")
+            afc_make_directory(afc, "/iTunes_Control/iTunes/Artwork/Originals")
+            afc_make_directory(afc, "/iTunes_Control/iTunes/Artwork/Caches")
             afc_make_directory(afc, "/iTunes_Control/Artwork")
+            print("[DeviceManager] Step 2: Directories created")
             
             afc_client_free(afc)
             
             // Step 3: Create database (merge or fresh)
             var dbURL: URL
             var existingFiles = Set<String>()
+            var artworkInfo: [MediaLibraryBuilder.ArtworkInfo] = []
             
             do {
-                // Check if existing database is valid (at least 10KB to cover header + schema)
-                if let existingData = existingDbData, existingData.count > 10000 {
+                // FORCE FRESH LIBRARY for debugging (Condition includes false to skip block)
+                if let existingData = existingDbData, existingData.count > 10000, false {
                     progress("Merging with existing library...")
                     print("[DeviceManager] Step 3: Merging with existing database (\(existingData.count) bytes)")
                     
@@ -513,24 +545,32 @@ class DeviceManager: ObservableObject {
                     )
                     dbURL = result.dbURL
                     existingFiles = result.existingFiles
+                    artworkInfo = result.artworkInfo
                     
-                    print("[DeviceManager] Existing files on device: \(existingFiles.count)")
+                    print("[DeviceManager] Existing files on device: \(existingFiles.count), artwork entries: \(artworkInfo.count)")
                 } else {
                     if existingDbData != nil {
                         print("[DeviceManager] Existing database too small (\(existingDbData!.count) bytes), creating fresh")
                     }
+                    // Create fresh
                     progress("Creating new library...")
                     print("[DeviceManager] Step 3: Creating fresh database")
-                    dbURL = try MediaLibraryBuilder.createDatabase(with: songs)
+                    let createResult = try MediaLibraryBuilder.createDatabase_v104(songs: songs)
+                    dbURL = createResult.dbURL
+                    artworkInfo = createResult.artworkInfo
                 }
             } catch {
                 // If merge failed, try creating a fresh database instead
                 print("[DeviceManager] Merge failed: \(error), falling back to fresh database")
+                // Create fresh
+                progress("Creating fresh database...")
+                print("[DeviceManager] Step 3 (VERIFIED): Creating fresh database")
                 do {
-                    progress("Creating new library...")
-                    dbURL = try MediaLibraryBuilder.createDatabase(with: songs)
+                    let result = try MediaLibraryBuilder.createDatabase_v104(songs: songs)
+                    dbURL = result.dbURL
+                    artworkInfo = result.artworkInfo
                 } catch {
-                    print("[DeviceManager] ERROR: Failed to create database: \(error)")
+                    print("[DeviceManager] Failed to create fresh database: \(error)")
                     DispatchQueue.main.async { completion(false) }
                     return
                 }
@@ -573,23 +613,18 @@ class DeviceManager: ObservableObject {
                 
                 uploadedCount += 1
                 
-                // Upload artwork to iOS artwork cache path
-                // Format: /iTunes_Control/iTunes/Artwork/Originals/XX/rest_of_sha1 (no extension)
-                if let artworkData = song.artworkData {
-                    // Compute SHA1 hash of artwork data
-                    var sha1Hash = [UInt8](repeating: 0, count: Int(CC_SHA1_DIGEST_LENGTH))
-                    artworkData.withUnsafeBytes { bytes in
-                        _ = CC_SHA1(bytes.baseAddress, CC_LONG(artworkData.count), &sha1Hash)
-                    }
-                    let hashString = sha1Hash.map { String(format: "%02x", $0) }.joined()
+                // Upload artwork file using the path from artworkInfo
+                // artworkInfo now contains correct paths: SHA1(token) -> XX/hash
+                if let artworkData = song.artworkData, index < artworkInfo.count {
+                    let info = artworkInfo[index]
+                    let artworkRelativePath = info.artworkHash  // Format: "XX/hashstring"
                     
-                    // Path format: XX/rest (first 2 chars as folder)
-                    let folderName = String(hashString.prefix(2))
-                    let fileName = String(hashString.dropFirst(2))
+                    let pathComponents = artworkRelativePath.components(separatedBy: "/")
+                    let folderName = pathComponents.count >= 1 ? pathComponents[0] : "00"
+                    let fileName = pathComponents.count >= 2 ? pathComponents[1] : "unknown"
                     
-                    // Create directory structure and upload
                     let artworkDir = "/iTunes_Control/iTunes/Artwork/Originals/\(folderName)"
-                    let artworkPath = "\(artworkDir)/\(fileName)"
+                    let artworkPath = "/iTunes_Control/iTunes/Artwork/Originals/\(artworkRelativePath)"
                     
                     print("[DeviceManager] Uploading artwork for: \(song.title) -> \(artworkPath)")
                     
@@ -597,72 +632,34 @@ class DeviceManager: ObservableObject {
                     var afcArt: AfcClientHandle?
                     afc_client_connect(self.provider, &afcArt)
                     if afcArt != nil {
-                        // Create Originals directory
                         afc_make_directory(afcArt, "/iTunes_Control/iTunes/Artwork")
                         afc_make_directory(afcArt, "/iTunes_Control/iTunes/Artwork/Originals")
                         afc_make_directory(afcArt, artworkDir)
-                        
-                        // Create Caches directories for all sizes found in 3uTools
-                        let cacheSizes = ["480x480", "531x531", "556x556", "390x390", "144x144"]
-                        
-                        afc_make_directory(afcArt, "/iTunes_Control/iTunes/Artwork/Caches")
-                        for size in cacheSizes {
-                            afc_make_directory(afcArt, "/iTunes_Control/iTunes/Artwork/Caches/\(size)")
-                            afc_make_directory(afcArt, "/iTunes_Control/iTunes/Artwork/Caches/\(size)/\(folderName)")
-                        }
                         afc_client_free(afcArt)
                     }
                     
-                    // Save artwork to temp file (no extension, as iOS expects)
+                    // Save artwork to temp file
                     let tempArtwork = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
                     try? artworkData.write(to: tempArtwork)
                     
-                    // Upload to Originals
+                    // Upload
                     let artworkSem = DispatchSemaphore(value: 0)
                     self.uploadFileToDevice(localURL: tempArtwork, remotePath: artworkPath) { _ in
                         artworkSem.signal()
                     }
                     artworkSem.wait()
                     
-                    // Upload to ALL Cache sizes (mimic 3uTools structure)
-                    let cacheSizes = ["480x480", "531x531", "556x556", "390x390", "144x144"]
-                    for size in cacheSizes {
-                        let cachePath = "/iTunes_Control/iTunes/Artwork/Caches/\(size)/\(folderName)/\(fileName)"
-                        let cacheSem = DispatchSemaphore(value: 0)
-                        self.uploadFileToDevice(localURL: tempArtwork, remotePath: cachePath) { _ in
-                            cacheSem.signal()
-                        }
-                        cacheSem.wait()
-                    }
-                    
-                    print("[DeviceManager] Uploaded artwork to Originals and \(cacheSizes.count) cache folders")
-                    
                     try? FileManager.default.removeItem(at: tempArtwork)
-                    
-                    // Store hash for DB reference
-                    print("[DeviceManager] Artwork hash: \(folderName)/\(fileName)")
+                    print("[DeviceManager] Artwork uploaded to: \(artworkPath)")
                 }
             }
             
             print("[DeviceManager] Uploaded: \(uploadedCount), Skipped: \(skippedCount)")
             
-            // Step 4.5: Generate and upload ArtworkDB binary file
-            progress("Generating ArtworkDB...")
-            print("[DeviceManager] Step 4.5: Generating ArtworkDB")
-            
-            // Build artwork entries for ArtworkDB - we need item_pids from songs with artwork
-            // For now, generate an empty skeleton (the binary format requires specific structure)
-            let artworkDBData = ArtworkDBBuilder.generateEmptyArtworkDB()
-            let artworkDBPath = FileManager.default.temporaryDirectory.appendingPathComponent("ArtworkDB")
-            try? artworkDBData.write(to: artworkDBPath)
-            
-            let semArtworkDB = DispatchSemaphore(value: 0)
-            self.uploadFileToDevice(localURL: artworkDBPath, remotePath: "/iTunes_Control/Artwork/ArtworkDB") { _ in
-                semArtworkDB.signal()
-            }
-            semArtworkDB.wait()
-            try? FileManager.default.removeItem(at: artworkDBPath)
-            print("[DeviceManager] ArtworkDB uploaded")
+            // Step 4.5: ArtworkDB generation DISABLED
+            // iOS manages its own artwork database using internal algorithms.
+            // We no longer upload external artwork or ArtworkDB files.
+            print("[DeviceManager] Step 4.5: ArtworkDB generation SKIPPED - iOS handles artwork internally")
 
             
             // Step 5: Upload merged database
@@ -770,6 +767,7 @@ class DeviceManager: ObservableObject {
             // Step 3: Create database with playlist
             var dbURL: URL
             var existingFiles = Set<String>()
+            var artworkInfo: [MediaLibraryBuilder.ArtworkInfo] = []
             
             do {
                 if let existingData = existingDbData, existingData.count > 10000 {
@@ -784,15 +782,20 @@ class DeviceManager: ObservableObject {
                     )
                     dbURL = result.dbURL
                     existingFiles = result.existingFiles
+                    artworkInfo = result.artworkInfo
                 } else {
                     progress("Creating new library with playlist...")
-                    dbURL = try MediaLibraryBuilder.createDatabase(with: songs, playlistName: playlistName)
+                    let createResult = try MediaLibraryBuilder.createDatabase_v104(songs: songs, playlistName: playlistName)
+                    dbURL = createResult.dbURL
+                    artworkInfo = createResult.artworkInfo
                 }
             } catch {
                 print("[DeviceManager] Database creation failed: \(error)")
                 do {
                     progress("Creating new library with playlist...")
-                    dbURL = try MediaLibraryBuilder.createDatabase(with: songs, playlistName: playlistName)
+                   let createResult = try MediaLibraryBuilder.createDatabase_v104(songs: songs, playlistName: playlistName)
+                   dbURL = createResult.dbURL
+                   artworkInfo = createResult.artworkInfo
                 } catch {
                     print("[DeviceManager] ERROR: Failed to create database: \(error)")
                     DispatchQueue.main.async { completion(false) }
@@ -853,13 +856,44 @@ class DeviceManager: ObservableObject {
                     try? artworkData.write(to: tempArtwork)
                     
                     let artworkSem = DispatchSemaphore(value: 0)
-                    self.uploadFileToDevice(localURL: tempArtwork, remotePath: artworkPath) { _ in
+                    self.uploadFileToDevice(localURL: tempArtwork, remotePath: artworkPath) { success in
+                        if !success {
+                            print("[DeviceManager] FATAL ERROR: Failed to upload artwork to \(artworkPath)")
+                            progress("Error uploading artwork for \(song.title)")
+                        }
                         artworkSem.signal()
                     }
                     artworkSem.wait()
                     try? FileManager.default.removeItem(at: tempArtwork)
                 }
             }
+            
+            // Step 4.5: Generate and upload ArtworkDB binary file
+            progress("Generating ArtworkDB...")
+            print("[DeviceManager] Step 4.5: Generating ArtworkDB with \(artworkInfo.count) entries")
+            
+            // Build ArtworkDB entries from collected artwork info
+            let artworkDBEntries = artworkInfo.enumerated().map { index, info in
+                ArtworkDBBuilder.ArtworkEntry(
+                    imageID: UInt32(info.artworkToken) ?? UInt32(100 + index),
+                    songDBID: UInt64(info.itemPid),
+                    artworkHash: info.artworkHash,
+                    fileSize: info.fileSize
+                )
+            }
+            let artworkDBData = ArtworkDBBuilder.generateArtworkDB(entries: artworkDBEntries)
+            print("[DeviceManager] ArtworkDB size: \(artworkDBData.count) bytes")
+            
+            let artworkDBPath = FileManager.default.temporaryDirectory.appendingPathComponent("ArtworkDB")
+            try? artworkDBData.write(to: artworkDBPath)
+            
+            let semArtworkDB = DispatchSemaphore(value: 0)
+            self.uploadFileToDevice(localURL: artworkDBPath, remotePath: "/iTunes_Control/Artwork/ArtworkDB") { _ in
+                semArtworkDB.signal()
+            }
+            semArtworkDB.wait()
+            try? FileManager.default.removeItem(at: artworkDBPath)
+            print("[DeviceManager] ArtworkDB uploaded")
             
             // Step 5: Upload database
             progress("Uploading database...")

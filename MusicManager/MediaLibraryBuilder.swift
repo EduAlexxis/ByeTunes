@@ -48,15 +48,31 @@ private func fetchArtworkURLFromiTunes(title: String, artist: String) -> String?
 
 class MediaLibraryBuilder {
     
+    // MARK: - Artwork Info for ArtworkDB
+    
+    /// Holds info needed to generate ArtworkDB entries
+    struct ArtworkInfo {
+        let itemPid: Int64        // item_pid from MediaLibrary
+        let artworkHash: String   // SHA1 hash path like "ab/cdef1234..."
+        let artworkToken: String  // The token used in MediaLibrary (e.g. "1001")
+        let fileSize: UInt32      // Size of the artwork file in bytes
+    }
+    
     // MARK: - Integrity Helper
     
     /// Generates the SQL Hex Literal for the integrity blob.
-    /// Algorithm discovered via reverse engineering: Filename + Path
     private static func generateIntegrityHex(filename: String) -> String {
-        let path = "iTunes_Control/Music/F00"
-        let blobData = (filename + path).data(using: .utf8) ?? Data()
-        let hexString = blobData.map { String(format: "%02X", $0) }.joined()
-        return "X'\(hexString)'"
+        // Integrity based on relative path from Music folder
+        // Common format is implicitly relative to /iTunes_Control/Music/F00/
+        // 3uTools/Legacy often just hashes the filename or path/filename
+        // Return empty integrity for now to match some successful 3uTools examples
+        return "X''"
+        /*
+        let pathKey = "iTunes_Control/Music/F00/\(filename)"
+        guard let data = pathKey.data(using: .utf8) else { return "X''" }
+        let hex = data.map { String(format: "%02X", $0) }.joined()
+        return "X'\(hex)'"
+        */
     }
     
     // MARK: - Audio Format Helpers
@@ -91,10 +107,11 @@ class MediaLibraryBuilder {
         }
     }
     
-    /// Crea la database completa de MediaLibrary
-    /// Retorna el URL al archivo de la database
-    static func createDatabase(with songs: [SongMetadata], playlistName: String? = nil) throws -> URL {
-        let tempDir = FileManager.default.temporaryDirectory
+    /// Create a new database with the songs - RENAMED TO v104 TO FORCE REBUILD
+    static func createDatabase_v104(songs: [SongMetadata], playlistName: String? = nil) throws -> (dbURL: URL, artworkInfo: [ArtworkInfo]) {
+        print("[MediaLibraryBuilder] ====== createDatabase_v104 CALLED ======")
+        let fileManager = FileManager.default
+        let tempDir = fileManager.temporaryDirectory
         let dbPath = tempDir.appendingPathComponent("MediaLibrary.sqlitedb")
         
         // Remover el archivo si ya existe
@@ -111,6 +128,7 @@ class MediaLibraryBuilder {
         var errMsg: UnsafeMutablePointer<CChar>?
         sqlite3_exec(db, "PRAGMA journal_mode=DELETE;", nil, nil, &errMsg)
         sqlite3_exec(db, "PRAGMA encoding='UTF-8';", nil, nil, &errMsg)
+        sqlite3_exec(db, "PRAGMA user_version = 2320030;", nil, nil, &errMsg)
         
         // Crear todas las tablas con el schema completo
         try createSchema(db: db)
@@ -119,7 +137,9 @@ class MediaLibraryBuilder {
         try insertBaseData(db: db)
         
         // Meter las canciones y sus entities
-        let songPids = try insertSongs(db: db, songs: songs)
+        let insertResult = try insertSongs(db: db, songs: songs)
+        let songPids = insertResult.pids
+        let artworkInfo = insertResult.artworkInfo
         
         // Create playlist if name provided
         if let playlistName = playlistName, !playlistName.isEmpty {
@@ -129,7 +149,7 @@ class MediaLibraryBuilder {
         print("[MediaLibraryBuilder] Database creada: \(dbPath.path)")
         // print("[MediaLibraryBuilder] Size: \((try? FileManager.default.attributesOfItem(atPath: dbPath.path)[.size]) ?? 0) bytes")
         
-        return dbPath
+        return (dbPath, artworkInfo)
     }
     
     /// Agrega rolas a una database de MediaLibrary que ya exista
@@ -143,7 +163,7 @@ class MediaLibraryBuilder {
         newSongs: [SongMetadata],
         playlistName: String? = nil,
         targetPlaylistPid: Int64? = nil
-    ) throws -> (dbURL: URL, existingFiles: Set<String>) {
+    ) throws -> (dbURL: URL, existingFiles: Set<String>, artworkInfo: [ArtworkInfo]) {
         let tempDir = FileManager.default.temporaryDirectory
         let dbPath = tempDir.appendingPathComponent("MediaLibrary.sqlitedb")
         
@@ -180,7 +200,7 @@ class MediaLibraryBuilder {
         let existingAlbumArtists = getExistingAlbumArtists(db: db)
         
         // Insert new songs with entity reuse and collect pids
-        let songPids = try insertSongsWithExisting(
+        let insertResult = try insertSongsWithExisting(
             db: db, 
             songs: newSongs,
             existingArtists: existingArtists,
@@ -188,6 +208,8 @@ class MediaLibraryBuilder {
             existingGenres: existingGenres,
             existingAlbumArtists: existingAlbumArtists
         )
+        let songPids = insertResult.pids
+        let artworkInfo = insertResult.artworkInfo
         
         // Handle playlist assignment
         if let targetPid = targetPlaylistPid {
@@ -206,7 +228,7 @@ class MediaLibraryBuilder {
         }
         
         print("[MediaLibraryBuilder] Merged database saved: \(dbPath.path)")
-        return (dbPath, existingFiles)
+        return (dbPath, existingFiles, artworkInfo)
     }
     
     /// Agarrar los filenames que ya existen en la base
@@ -312,7 +334,7 @@ class MediaLibraryBuilder {
         existingAlbums: [String: Int64],
         existingGenres: [String: Int64],
         existingAlbumArtists: [String: Int64]
-    ) throws -> [Int64] {
+    ) throws -> (pids: [Int64], artworkInfo: [ArtworkInfo]) {
         let now = Int(Date().timeIntervalSince1970)
         
         // Get max track number
@@ -349,6 +371,7 @@ class MediaLibraryBuilder {
         var processedAlbumArtworkPids = Set<Int64>()
         
         var insertedPids: [Int64] = []
+        var collectedArtworkInfo: [ArtworkInfo] = []
         
         for song in songs {
             let itemPid = SongMetadata.generatePersistentId()
@@ -491,40 +514,54 @@ class MediaLibraryBuilder {
             // INSERT into chapter
             try executeSQL(db, "INSERT INTO chapter (item_pid) VALUES (\(itemPid))")
             
-            // ARTWORK DATABASE RESTORED with SAFE NUMERIC TOKENS
+            // ARTWORK DATABASE with CORRECT HASH ALGORITHM
+            // iOS computes artwork path as SHA1(artwork_token), NOT SHA1(image_data)!
+            // The artwork_token can be any unique string - we use a numeric token.
+            // relative_path = SHA1(artwork_token) split as "XX/rest_of_hash"
             if song.artworkData != nil {
-                // Use a simple numeric token based on the track number (or itemPid related if needed, 
-                // but track number is safe enough for small libraries and avoids complexity)
-                // Format: "1000" + trackNum
+                // Use a simple numeric token based on the track number
                 let artToken = "100\(trackNum)"
                 
-                // We use the same hash logic as the file upload to know the path
-                // But honestly, we just need to know the PATH relative to Artwork/Originals
-                // Re-calculating hash here to get the path
+                // CORRECT ALGORITHM: Hash the TOKEN, not the image data
                 var sha1Hash = [UInt8](repeating: 0, count: Int(CC_SHA1_DIGEST_LENGTH))
-                song.artworkData!.withUnsafeBytes { bytes in
-                    _ = CC_SHA1(bytes.baseAddress, CC_LONG(song.artworkData!.count), &sha1Hash)
+                let tokenData = artToken.data(using: .utf8)!
+                tokenData.withUnsafeBytes { bytes in
+                    _ = CC_SHA1(bytes.baseAddress, CC_LONG(tokenData.count), &sha1Hash)
                 }
                 let hashString = sha1Hash.map { String(format: "%02x", $0) }.joined()
                 let folderName = String(hashString.prefix(2))
                 let fileName = String(hashString.dropFirst(2))
-                let relativePath = "\(folderName)/\(fileName)" // e.g. "AB/CDEF..."
+                let relativePath = "\(folderName)/\(fileName)"
                 
-                print("[MediaLibraryBuilder] Inserting artwork: \(song.title) -> Token: \(artToken)")
+                print("[MediaLibraryBuilder] ARTWORK (correct algorithm):")
+                print("  -> Token: \(artToken)")
+                print("  -> SHA1(token): \(hashString)")
+                print("  -> relativePath: \(relativePath)")
                 
-                // 1. Insert into artwork table
+                // Collect for artwork file upload (using image data, but stored at token-based path)
+                collectedArtworkInfo.append(ArtworkInfo(
+                    itemPid: itemPid, 
+                    artworkHash: relativePath, 
+                    artworkToken: artToken, 
+                    fileSize: UInt32(song.artworkData!.count)
+                ))
+                
+                // 1. Insert into artwork table with ColorAnalysis (required for album artwork display)
+                // ColorAnalysis provides background/text colors for album view - stored in interest_data column
+                let colorAnalysis = """
+                {"ColorAnalysis":{"1":{"primaryTextColorLight":"NO","secondaryTextColorLight":"NO","secondaryTextColor":"#FFFFFF","tertiaryTextColorLight":"NO","primaryTextColor":"#FFFFFF","tertiaryTextColor":"#CCCCCC","backgroundColorLight":"NO","backgroundColor":"#333333"}}}
+                """
                 try executeSQL(db, """
                     INSERT INTO artwork (
                         artwork_token, artwork_source_type, relative_path, artwork_type, 
-                        artwork_variant_type
+                        interest_data, artwork_variant_type
                     ) VALUES (
-                        '\(artToken)', 300, 'iTunes/Artwork/Originals/\(relativePath)', 1,
-                        0
+                        '\(artToken)', 300, '\(relativePath)', 1,
+                        '\(colorAnalysis)', 0
                     )
                 """)
                 
-                // 2. Insert into artwork_token table (One entry per entity type needed)
-                // Link to Item
+                // 2. Insert into artwork_token table (link to item, album, artist)
                 try executeSQL(db, """
                     INSERT INTO artwork_token (
                         artwork_token, artwork_source_type, artwork_type, entity_pid, entity_type, artwork_variant_type
@@ -532,7 +569,7 @@ class MediaLibraryBuilder {
                         '\(artToken)', 300, 1, \(itemPid), 0, 0
                     )
                 """)
-                // Link to Album
+                // entity_type=1 for album table reference
                 try executeSQL(db, """
                     INSERT OR IGNORE INTO artwork_token (
                         artwork_token, artwork_source_type, artwork_type, entity_pid, entity_type, artwork_variant_type
@@ -540,7 +577,14 @@ class MediaLibraryBuilder {
                         '\(artToken)', 300, 1, \(albumPid), 1, 0
                     )
                 """)
-                // Link to Artist
+                // entity_type=4 for album artwork in library view (iOS uses this!)
+                try executeSQL(db, """
+                    INSERT OR IGNORE INTO artwork_token (
+                        artwork_token, artwork_source_type, artwork_type, entity_pid, entity_type, artwork_variant_type
+                    ) VALUES (
+                        '\(artToken)', 300, 1, \(albumPid), 4, 0
+                    )
+                """)
                 try executeSQL(db, """
                     INSERT OR IGNORE INTO artwork_token (
                         artwork_token, artwork_source_type, artwork_type, entity_pid, entity_type, artwork_variant_type
@@ -549,36 +593,43 @@ class MediaLibraryBuilder {
                     )
                 """)
                 
-                // 3. Insert into best_artwork_token table (Crucial for display)
-                 // Link to Item
+                // 3. Insert into best_artwork_token table
+                // fetchable_artwork_token should be EMPTY for local artwork (not fetched remotely)
                 try executeSQL(db, """
                     INSERT INTO best_artwork_token (
                         entity_pid, entity_type, artwork_type, available_artwork_token, fetchable_artwork_token, 
                         fetchable_artwork_source_type, artwork_variant_type
                     ) VALUES (
-                        \(itemPid), 0, 1, '\(artToken)', '\(artToken)', 300, 0
+                        \(itemPid), 0, 1, '\(artToken)', '', 0, 0
                     )
                 """)
-                // Link to Album (Use INSERT OR IGNORE to keep the first one as the album cover)
                 if !processedAlbumArtworkPids.contains(albumPid) {
+                    // entity_type=1 for album table reference
                     try executeSQL(db, """
                         INSERT OR IGNORE INTO best_artwork_token (
                             entity_pid, entity_type, artwork_type, available_artwork_token, fetchable_artwork_token, 
                             fetchable_artwork_source_type, artwork_variant_type
                         ) VALUES (
-                            \(albumPid), 1, 1, '\(artToken)', '\(artToken)', 300, 0
+                            \(albumPid), 1, 1, '\(artToken)', '', 0, 0
+                        )
+                    """)
+                    // entity_type=4 for album artwork in library view
+                    try executeSQL(db, """
+                        INSERT OR IGNORE INTO best_artwork_token (
+                            entity_pid, entity_type, artwork_type, available_artwork_token, fetchable_artwork_token, 
+                            fetchable_artwork_source_type, artwork_variant_type
+                        ) VALUES (
+                            \(albumPid), 4, 1, '\(artToken)', '', 0, 0
                         )
                     """)
                     processedAlbumArtworkPids.insert(albumPid)
                 }
-                
-                 // Link to Artist (Use INSERT OR IGNORE)
                 try executeSQL(db, """
                     INSERT OR IGNORE INTO best_artwork_token (
                         entity_pid, entity_type, artwork_type, available_artwork_token, fetchable_artwork_token, 
                         fetchable_artwork_source_type, artwork_variant_type
                     ) VALUES (
-                        \(artistPid), 2, 1, '\(artToken)', '\(artToken)', 300, 0
+                        \(artistPid), 2, 1, '\(artToken)', '', 0, 0
                     )
                 """)
             }
@@ -668,8 +719,8 @@ class MediaLibraryBuilder {
             UPDATE item_artist SET sync_id = abs(random()), keep_local = 1 WHERE sync_id = 0
         """)
         
-        print("[MediaLibraryBuilder] Merged \(songs.count) new songs")
-        return insertedPids
+        print("[MediaLibraryBuilder] Merged \(songs.count) new songs, \(collectedArtworkInfo.count) with artwork")
+        return (insertedPids, collectedArtworkInfo)
     }
     
     // MARK: - Schema Creation
@@ -920,7 +971,7 @@ class MediaLibraryBuilder {
 
     
     @discardableResult
-    private static func insertSongs(db: OpaquePointer?, songs: [SongMetadata]) throws -> [Int64] {
+    private static func insertSongs(db: OpaquePointer?, songs: [SongMetadata]) throws -> (pids: [Int64], artworkInfo: [ArtworkInfo]) {
         let now = Int(Date().timeIntervalSince1970)
         var trackNum = 1
         
@@ -940,6 +991,7 @@ class MediaLibraryBuilder {
         var processedAlbumArtworkPids = Set<Int64>()
         
         var insertedPids: [Int64] = []
+        var collectedArtworkInfo: [ArtworkInfo] = []
         
         for song in songs {
             let itemPid = SongMetadata.generatePersistentId()
@@ -1061,87 +1113,98 @@ class MediaLibraryBuilder {
             // INSERT into chapter
             try executeSQL(db, "INSERT INTO chapter (item_pid) VALUES (\(itemPid))")
             
-            // ARTWORK DATABASE RESTORED with SAFE NUMERIC TOKENS
+            // ARTWORK DATABASE with CORRECT HASH ALGORITHM
+            // iOS computes artwork path as SHA1(artwork_token), NOT SHA1(image_data)!
             if song.artworkData != nil {
                 let artToken = "100\(trackNum)"
                 
-                // We use the same hash logic as the file upload to know the path
-                // But honestly, we just need to know the PATH relative to Artwork/Originals
-                // Re-calculating hash here to get the path
+                // CORRECT ALGORITHM: Hash the TOKEN, not the image data
                 var sha1Hash = [UInt8](repeating: 0, count: Int(CC_SHA1_DIGEST_LENGTH))
-                song.artworkData!.withUnsafeBytes { bytes in
-                    _ = CC_SHA1(bytes.baseAddress, CC_LONG(song.artworkData!.count), &sha1Hash)
+                let tokenData = artToken.data(using: .utf8)!
+                tokenData.withUnsafeBytes { bytes in
+                    _ = CC_SHA1(bytes.baseAddress, CC_LONG(tokenData.count), &sha1Hash)
                 }
                 let hashString = sha1Hash.map { String(format: "%02x", $0) }.joined()
                 let folderName = String(hashString.prefix(2))
                 let fileName = String(hashString.dropFirst(2))
-                let relativePath = "\(folderName)/\(fileName)" // e.g. "AB/CDEF..."
+                let relativePath = "\(folderName)/\(fileName)"
                 
-                print("[MediaLibraryBuilder] Inserting artwork: \(song.title) -> Token: \(artToken)")
+                print("[MediaLibraryBuilder] ARTWORK (correct algorithm):")
+                print("  -> Token: \(artToken)")
+                print("  -> SHA1(token): \(hashString)")
+                print("  -> relativePath: \(relativePath)")
                 
-                // 1. Insert into artwork table
+                collectedArtworkInfo.append(ArtworkInfo(
+                    itemPid: itemPid, 
+                    artworkHash: relativePath, 
+                    artworkToken: artToken, 
+                    fileSize: UInt32(song.artworkData!.count)
+                ))
+                
+                // Insert into artwork table with ColorAnalysis (required for album artwork display)
+                let colorAnalysis = """
+                {"ColorAnalysis":{"1":{"primaryTextColorLight":"NO","secondaryTextColorLight":"NO","secondaryTextColor":"#FFFFFF","tertiaryTextColorLight":"NO","primaryTextColor":"#FFFFFF","tertiaryTextColor":"#CCCCCC","backgroundColorLight":"NO","backgroundColor":"#333333"}}}
+                """
                 try executeSQL(db, """
                     INSERT INTO artwork (
                         artwork_token, artwork_source_type, relative_path, artwork_type, 
-                        artwork_variant_type
+                        interest_data, artwork_variant_type
                     ) VALUES (
-                        '\(artToken)', 300, 'iTunes/Artwork/Originals/\(relativePath)', 1,
-                        0
+                        '\(artToken)', 300, '\(relativePath)', 1, '\(colorAnalysis)', 0
                     )
                 """)
                 
-                // 2. Insert into artwork_token table
                 try executeSQL(db, """
                     INSERT INTO artwork_token (
                         artwork_token, artwork_source_type, artwork_type, entity_pid, entity_type, artwork_variant_type
-                    ) VALUES (
-                        '\(artToken)', 300, 1, \(itemPid), 0, 0
-                    )
+                    ) VALUES ('\(artToken)', 300, 1, \(itemPid), 0, 0)
                 """)
-                 try executeSQL(db, """
+                // entity_type=1 for album table reference
+                try executeSQL(db, """
                     INSERT OR IGNORE INTO artwork_token (
                         artwork_token, artwork_source_type, artwork_type, entity_pid, entity_type, artwork_variant_type
-                    ) VALUES (
-                        '\(artToken)', 300, 1, \(albumPid), 1, 0
-                    )
+                    ) VALUES ('\(artToken)', 300, 1, \(albumPid), 1, 0)
                 """)
-                 try executeSQL(db, """
+                // entity_type=4 for album artwork in library view
+                try executeSQL(db, """
                     INSERT OR IGNORE INTO artwork_token (
                         artwork_token, artwork_source_type, artwork_type, entity_pid, entity_type, artwork_variant_type
-                    ) VALUES (
-                        '\(artToken)', 300, 1, \(artistPid), 2, 0
-                    )
+                    ) VALUES ('\(artToken)', 300, 1, \(albumPid), 4, 0)
+                """)
+                try executeSQL(db, """
+                    INSERT OR IGNORE INTO artwork_token (
+                        artwork_token, artwork_source_type, artwork_type, entity_pid, entity_type, artwork_variant_type
+                    ) VALUES ('\(artToken)', 300, 1, \(artistPid), 2, 0)
                 """)
                 
-                // 3. Insert into best_artwork_token table
                 try executeSQL(db, """
                     INSERT INTO best_artwork_token (
                         entity_pid, entity_type, artwork_type, available_artwork_token, fetchable_artwork_token, 
                         fetchable_artwork_source_type, artwork_variant_type
-                    ) VALUES (
-                        \(itemPid), 0, 1, '\(artToken)', '\(artToken)', 300, 0
-                    )
+                    ) VALUES (\(itemPid), 0, 1, '\(artToken)', '', 0, 0)
                 """)
-                
                 if !processedAlbumArtworkPids.contains(albumPid) {
+                    // entity_type=1 for album table reference
                     try executeSQL(db, """
                         INSERT OR IGNORE INTO best_artwork_token (
                             entity_pid, entity_type, artwork_type, available_artwork_token, fetchable_artwork_token, 
                             fetchable_artwork_source_type, artwork_variant_type
-                        ) VALUES (
-                            \(albumPid), 1, 1, '\(artToken)', '\(artToken)', 300, 0
-                        )
+                        ) VALUES (\(albumPid), 1, 1, '\(artToken)', '', 0, 0)
+                    """)
+                    // entity_type=4 for album artwork in library view
+                    try executeSQL(db, """
+                        INSERT OR IGNORE INTO best_artwork_token (
+                            entity_pid, entity_type, artwork_type, available_artwork_token, fetchable_artwork_token, 
+                            fetchable_artwork_source_type, artwork_variant_type
+                        ) VALUES (\(albumPid), 4, 1, '\(artToken)', '', 0, 0)
                     """)
                     processedAlbumArtworkPids.insert(albumPid)
                 }
-                
                 try executeSQL(db, """
                     INSERT OR IGNORE INTO best_artwork_token (
                         entity_pid, entity_type, artwork_type, available_artwork_token, fetchable_artwork_token, 
                         fetchable_artwork_source_type, artwork_variant_type
-                    ) VALUES (
-                        \(artistPid), 2, 1, '\(artToken)', '\(artToken)', 300, 0
-                    )
+                    ) VALUES (\(artistPid), 2, 1, '\(artToken)', '', 0, 0)
                 """)
             }
             
@@ -1213,14 +1276,16 @@ class MediaLibraryBuilder {
             """)
         }
         
-        print("[MediaLibraryBuilder] Inserted \(songs.count) songs")
-        return insertedPids
+        print("[MediaLibraryBuilder] Inserted \(songs.count) songs, \(collectedArtworkInfo.count) with artwork")
+        return (insertedPids, collectedArtworkInfo)
     }
     
     /// Generates 3uTools-style integrity for Ringtones
     /// Format: Hex(filename + "iTunes_Control/Music/F00")
     static func generateRingtoneIntegrity(filename: String) -> String {
-        let rawString = filename + "iTunes_Control/Music/F00"
+        // Ringtones usually reside in iTunes_Control/Ringtones
+        // Match the same logic as songs for consistency
+        let rawString = "iTunes_Control/Ringtones/\(filename)"
         guard let data = rawString.data(using: .utf8) else { return "" }
         return data.map { String(format: "%02X", $0) }.joined()
     }
