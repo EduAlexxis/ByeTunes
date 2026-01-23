@@ -14,7 +14,7 @@ struct iTunesSearchSheet: View {
     
     var body: some View {
         ZStack {
-            Color(.systemGroupedBackground)
+            Color(.systemBackground)
                 .ignoresSafeArea()
             
             VStack(spacing: 0) {
@@ -100,28 +100,39 @@ struct iTunesSearchSheet: View {
                     Spacer()
                 } else {
                     ScrollView {
-                        LazyVStack(spacing: 12) {
+                        LazyVStack(spacing: 0) {
                             if metadataSource == "deezer" {
-                                ForEach(deezerResults) { match in
-                                    Button {
-                                        applyDeezerMatch(match)
-                                    } label: {
-                                        DeezerRow(match: match)
+                                ForEach(Array(deezerResults.enumerated()), id: \.element.id) { index, match in
+                                    VStack(spacing: 0) {
+                                        Button {
+                                            applyDeezerMatch(match)
+                                        } label: {
+                                            DeezerRow(match: match)
+                                        }
+                                        .buttonStyle(PlainButtonStyle())
+                                        
+                                        if index < deezerResults.count - 1 {
+                                            Divider().padding(.leading, 80)
+                                        }
                                     }
-                                    .buttonStyle(PlainButtonStyle())
                                 }
                             } else {
-                                ForEach(itunesResults) { match in
-                                    Button {
-                                        applyItunesMatch(match)
-                                    } label: {
-                                        iTunesRow(match: match)
+                                ForEach(Array(itunesResults.enumerated()), id: \.element.trackId) { index, match in
+                                    VStack(spacing: 0) {
+                                        Button {
+                                            applyItunesMatch(match)
+                                        } label: {
+                                            iTunesRow(match: match)
+                                        }
+                                        .buttonStyle(PlainButtonStyle())
+                                        
+                                        if index < itunesResults.count - 1 {
+                                            Divider().padding(.leading, 80)
+                                        }
                                     }
-                                    .buttonStyle(PlainButtonStyle())
                                 }
                             }
                         }
-                        .padding(.horizontal, 16)
                         .padding(.bottom, 20)
                     }
                 }
@@ -188,18 +199,17 @@ struct iTunesSearchSheet: View {
 struct iTunesRow: View {
     let match: iTunesSong
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 14) {
             AsyncImage(url: URL(string: match.artworkUrl100 ?? "")) { image in
                 image.resizable().aspectRatio(contentMode: .fill)
             } placeholder: {
                 Color(uiColor: .systemGray5)
                     .overlay(Image(systemName: "music.note").foregroundColor(.secondary))
             }
-            .frame(width: 56, height: 56).cornerRadius(8)
-            .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
+            .frame(width: 48, height: 48).cornerRadius(6)
             
             VStack(alignment: .leading, spacing: 3) {
-                Text(match.trackName ?? "Unknown Title").font(.headline).foregroundColor(.primary).lineLimit(1)
+                Text(match.trackName ?? "Unknown Title").font(.body).foregroundColor(.primary).lineLimit(1)
                 Text(match.artistName ?? "Unknown Artist").font(.subheadline).foregroundColor(.secondary).lineLimit(1)
                 HStack(spacing: 4) {
                     if let album = match.collectionName { Text(album).lineLimit(1) }
@@ -209,37 +219,32 @@ struct iTunesRow: View {
             Spacer()
             Image(systemName: "chevron.right").font(.caption).foregroundColor(Color(uiColor: .tertiaryLabel))
         }
-        .padding(12)
-        .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .cornerRadius(16)
-        .shadow(color: Color.black.opacity(0.04), radius: 2, x: 0, y: 1)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
     }
 }
 
 struct DeezerRow: View {
     let match: DeezerSong
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 14) {
             AsyncImage(url: URL(string: match.album.cover_xl)) { image in
                 image.resizable().aspectRatio(contentMode: .fill)
             } placeholder: {
                 Color(uiColor: .systemGray5)
                     .overlay(Image(systemName: "music.note").foregroundColor(.secondary))
             }
-            .frame(width: 56, height: 56).cornerRadius(8)
-            .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
+            .frame(width: 48, height: 48).cornerRadius(6)
             
             VStack(alignment: .leading, spacing: 3) {
-                Text(match.title).font(.headline).foregroundColor(.primary).lineLimit(1)
+                Text(match.title).font(.body).foregroundColor(.primary).lineLimit(1)
                 Text(match.artist.name).font(.subheadline).foregroundColor(.secondary).lineLimit(1)
                 Text(match.album.title).font(.caption).foregroundColor(.secondary.opacity(0.8)).lineLimit(1)
             }
             Spacer()
             Image(systemName: "chevron.right").font(.caption).foregroundColor(Color(uiColor: .tertiaryLabel))
         }
-        .padding(12)
-        .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .cornerRadius(16)
-        .shadow(color: Color.black.opacity(0.04), radius: 2, x: 0, y: 1)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
     }
 }
