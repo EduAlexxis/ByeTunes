@@ -55,16 +55,11 @@ class DeviceManager: ObservableObject {
         defer { free(cString) }
         idevice_init_logger(Info, Disabled, cString)
     }
-
-    // MARK: - Heartbeat Connection
-    // Conectar el heartbeat pa que no se cierre la conexion
     
     // MARK: - Heartbeat Connection
     
     func startHeartbeat(completion: ((Bool) -> Void)? = nil) {
-        // If already connecting or connected, don't spam? 
-        // Actually, user wants "Retry", so we should allow re-entrancy but maybe cancel previous?
-        // For simplicity, just spawn a new check.
+        
         
         heartbeatThread = Thread {
             DispatchQueue.main.async {
@@ -87,20 +82,6 @@ class DeviceManager: ObservableObject {
         }
         heartbeatThread?.name = "HeartbeatThread"
         heartbeatThread?.start()
-        
-        // Wait for connection to be ready (hacky polling for the completion callback)
-        // Since establishHeartbeat blocks, we can't easily hook into "when it's connected" 
-        // because establishHeartbeat stays running for the loop.
-        // But establishHeartbeat calls completion(true) only when it FINISHES (disconnects).
-        // WE WANT TO KNOW WHEN IT STARTS.
-        
-        // Fix: establishHeartbeat should have a callback for "connected".
-        // But establishHeartbeat signature is `establishHeartbeat(_ completion: ...)` which is the "done" completion.
-        
-        // I need to modify establishHeartbeat to take TWO callbacks? Or just a "connected" callback.
-        // Actually, looking at establishHeartbeat implementation:
-        // It sets self.heartbeatReady = true inside the function BEFORE entering the loop.
-        // So I can poll for `heartbeatReady`?
         
         if let completion = completion {
             DispatchQueue.global().async {
@@ -159,9 +140,7 @@ class DeviceManager: ObservableObject {
             // Loop while connected
             while true {
                 var newInterval: UInt64 = 0
-                // We use 5s timeout. We do NOT check for error because false positives occur frequently.
-                // If the connection is truly dead, the outer loop isn't reachable, but at least we don't spam reconnects.
-                // This matches the stable behavior of the previous version.
+                
                 heartbeat_get_marco(hbClient, 10, &newInterval)
                 
                 heartbeat_send_polo(hbClient)
@@ -187,7 +166,7 @@ class DeviceManager: ObservableObject {
     }
 
     // MARK: - Notification Proxy
-    // Mandar notis al device pa que sepa que ya acabamos
+
     
     func sendSyncFinishedNotification() {
         var lockdownd: LockdowndClientHandle?
@@ -202,7 +181,7 @@ class DeviceManager: ObservableObject {
     }
     
     // MARK: - ATC Sync (Triggers Music Library Update)
-    // Disparar el sync de ATC (pa que actualice la library de musica)
+    
     
     func triggerATCSync(completion: @escaping (Bool) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {
@@ -222,11 +201,7 @@ class DeviceManager: ObservableObject {
             lockdownd_client_free(lockdownd)
             
             if port > 0 {
-                // Note: Full ATC protocol implementation would require:
-                // 1. Connect to the ATC port via TCP
-                // 2. Wrap in SSL using the pairing certificates
-                // 3. Send ATC commands (little-endian length + plist)
-                // For now, just confirming we can start the service
+                
                 completion(true)
             } else {
                 print("[DeviceManager] Failed to get ATC port")
@@ -236,7 +211,7 @@ class DeviceManager: ObservableObject {
     }
     
     // MARK: - AFC File Operations
-    // Operaciones de archivos AFC (subir/borrar cosas)
+    
 
     func addSongToDevice(localURL: URL, filename: String, completion: @escaping (Bool) -> Void) {
         Logger.shared.log("[DeviceManager] addSongToDevice called for: \(filename)")
@@ -352,16 +327,14 @@ class DeviceManager: ObservableObject {
             Logger.shared.log("[DeviceManager] Removing \(iTunesPath) and all contents...")
             
             // Recursive delete
-            // Note: We ignore errors because if it doesn't exist, it fails, which is fine.
+
             _ = afc_remove_path_and_contents(afc, iTunesPath)
             
             // Recreate the directory so it's ready for sync
             Logger.shared.log("[DeviceManager] Recreating \(iTunesPath)...")
             _ = afc_make_directory(afc, iTunesPath)
             
-            // Also explicitly ensure Artwork folder path exists?
-            // Usually the sync process creates folders it needs.
-            // But standard structure implies:
+            
              _ = afc_make_directory(afc, "/iTunes_Control/iTunes/Artwork")
              _ = afc_make_directory(afc, "/iTunes_Control/iTunes/Artwork/Originals")
             
@@ -488,7 +461,7 @@ class DeviceManager: ObservableObject {
                 // Verify file existence using simple open check
                 var checkFile: AfcFileHandle?
                 let ret = afc_file_open(afc, remotePath, AfcRdOnly, &checkFile)
-                if ret == nil { // nil return means success (no error) for IdeviceFfiError pointers
+                if ret == nil { 
                     if checkFile != nil {
                         afc_file_close(checkFile)
                     }
@@ -540,11 +513,7 @@ class DeviceManager: ObservableObject {
                         }
                     }
                 }
-                // Note: The bindings don't expose a specific free for this list, 
-                // but standard convention suggests the array and strings are allocated.
-                // Since we don't have a safe free function exposed and this is small data,
-                // we'll rely on OS cleanup or potentially minor leak rather than crashing with wrong free.
-                // idevice_data_free might be relevant but requires length.
+                
                 free(entries) 
             } else {
                 Logger.shared.log("[DeviceManager] Error reading directory or empty: \(remotePath)")
@@ -556,14 +525,10 @@ class DeviceManager: ObservableObject {
     }
     
     // MARK: - Full Injection Workflow (with merge support)
-    // [ACTIVE] This is the function actually being called by MusicView
+    
     func injectSongs(songs: [SongMetadata], progress: @escaping (String) -> Void, completion: @escaping (Bool) -> Void) {
         Logger.shared.log("[DeviceManager] injectSongs called with \(songs.count) songs")
-        
-        // ---------------------------------------------------------
-        // ---------------------------------------------------------
-        // METADATA SANITIZATION (Allow all songs, but fix empty data)
-        // ---------------------------------------------------------
+
         var validSongs: [SongMetadata] = []
         
         let isBatch = songs.count > 1
@@ -803,8 +768,7 @@ class DeviceManager: ObservableObject {
             print("[DeviceManager] Uploaded: \(uploadedCount), Skipped: \(skippedCount)")
             
             // Step 4.5: ArtworkDB generation DISABLED
-            // iOS manages its own artwork database using internal algorithms.
-            // We no longer upload external artwork or ArtworkDB files.
+            
             Logger.shared.log("[DeviceManager] Step 4.5: ArtworkDB generation SKIPPED - iOS handles artwork internally")
 
             
@@ -884,10 +848,7 @@ class DeviceManager: ObservableObject {
     func injectSongsAsPlaylist(songs: [SongMetadata], playlistName: String? = nil, targetPlaylistPid: Int64? = nil, progress: @escaping (String) -> Void, completion: @escaping (Bool) -> Void) {
         Logger.shared.log("[DeviceManager] injectSongsAsPlaylist called with \(songs.count) songs, playlist: '\(playlistName ?? "Existing")'")
         
-        // ---------------------------------------------------------
-        // METADATA SANITIZATION
-        // ---------------------------------------------------------
-        var validSongs: [SongMetadata] = []
+            var validSongs: [SongMetadata] = []
         for var song in songs {
             if song.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 let filename = song.localURL.lastPathComponent
@@ -904,7 +865,7 @@ class DeviceManager: ObservableObject {
             return
         }
         
-        let tempDir = FileManager.default.temporaryDirectory
+
         
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
@@ -969,7 +930,7 @@ class DeviceManager: ObservableObject {
             var dbURL: URL
             var existingFiles = Set<String>()
             var artworkInfo: [MediaLibraryBuilder.ArtworkInfo] = []
-            var songPids: [Int64] = []
+
             
             do {
                 if let existingData = existingDbData, existingData.count > 10000 {
@@ -988,14 +949,14 @@ class DeviceManager: ObservableObject {
                     dbURL = result.dbURL
                     existingFiles = result.existingFiles
                     artworkInfo = result.artworkInfo
-                    songPids = result.pids
+
                 } else {
                     progress("Creating new library with playlist...")
                     Logger.shared.log("[DeviceManager] Step 3: Creating fresh database with playlist")
                     let createResult = try MediaLibraryBuilder.createDatabase_v104(songs: validSongs, playlistName: playlistName)
                     dbURL = createResult.dbURL
                     artworkInfo = createResult.artworkInfo
-                    songPids = createResult.pids
+
                 }
             } catch {
                 Logger.shared.log("[DeviceManager] ⚠️ PLAYLIST MERGE FAILED: \(error)")
@@ -1036,61 +997,13 @@ class DeviceManager: ObservableObject {
                 uploadedCount += 1
                 
                 // Upload artwork
-                if let artworkData = song.artworkData {
-                    // Find info for this song. The builder returns artworkInfo for ALL processed songs.
-                    // However, we need to match PID.
-                    // Wait, validSongs index MIGHT NOT match songPids index if duplicates were skipped inside builder!
-                    // But `addSongsToExistingDatabase` returns `pids` only for NEWLY inserted songs usually?
-                    // Actually, looking at MediaLibraryBuilder, it returns logic such that we might need to be careful.
-                    // For now, let's try to match by PID if possible, or assume validSongs corresponds to songPids order for NEW songs?
-                    // The builder logic for `addSongsToExistingDatabase` returns pids for `insertSongsWithExisting` which iterates over `songsToAdd` (filtered).
-                    // This is tricky. Let's look for matching artworkInfo by iterating.
-                    
-                    // We can match by seeing if we have an artworkInfo entry for the SONG's PID.
-                    // But we don't know the song's PID easily until we look at the result `songPids`.
-                    // And `songPids` corresponds to `songsToAdd` (filtered inside builder).
-                    // This logic in `injectSongs` was: `index < artworkInfo.count`. This implies 1-to-1 mapping.
-                    // This works if `artworkInfo` contains info for the song at `index`.
-                    
-                    // Let's rely on finding artworkInfo with a matching PID or just skip for now complexity-wise if it's acceptable,
-                    // BUT the original code tried to do it.
-                    // A safer bet: The builder returns `artworkInfo` list. We iterate that list and upload those files.
-                    // We don't need to link it back to `validSongs` loop strictly effectively, we just need to upload all artifacts generated.
-                }
+
             }
             
-            // Upload ALL generated artwork artifacts
-            // This is safer than trying to map them inside the song loop which might have skips
-            for info in artworkInfo {
-                let artworkRelativePath = info.artworkHash  // "XX/hash"
-                let artworkPath = "/iTunes_Control/iTunes/Artwork/Originals/\(artworkRelativePath)"
-                
-                // We need the data. We can find the song that generated this PID?
-                // Or we can just trust that we have the data... wait, we need the data content to write to temp file.
-                // The `ArtworkInfo` struct keeps `fileSize` but not data.
-                
-                // We must find the song with this PID.
-                // Since we don't have a map of PID -> Song easily here without more logic.
-                // Converting `validSongs` to a map might be heavy?
-                // Let's use the loop approach from `injectSongs` but correct it.
-                // `injectSongs` iterates `validSongs`. If validSongs[i] was inserted, it tries `artworkInfo[i]`.
-                // But `mediaLibraryBuilder` filters `validSongs` to `songsToAdd`!
-                // So `artworkInfo` only corresponds to `songsToAdd`.
-                // This means `validSongs` loop index gets out of sync with `artworkInfo` index if any song was skipped.
-                
-                // FIX: Iterate `validSongs` and check if it was skipped (in `existingFiles`).
-                // If skipped, we don't upload artwork (it exists).
-                // If not skipped, we increment a "processed index" to consume `artworkInfo`.
-            }
             
-            // Actually, simpler:
-            // Iterate validSongs.
-            // If !existingFiles.contains(song.filename):
-            //    Upload MP3.
-            //    If song has artwork:
-            //       Find corresponding artworkInfo?
-            //       If we assume `artworkInfo` is in same order as `songsToAdd` (which it is in Builder),
-            //       we can maintain a counter.
+
+            
+            
             
             var artworkIndex = 0
             // Since we need to re-loop for artwork uploading cleanly:
@@ -1285,16 +1198,7 @@ class DeviceManager: ObservableObject {
                 dbData = existing
             } else {
                 Logger.shared.log("[DeviceManager] No existing DB found. Creating fresh database for Ringtones...")
-                // In a real scenario, might want to just fail or create empty. 
-                // Creating a valid empty DB from scratch is hard without a template.
-                // We'll proceed with empty Data and let Builder try to open it (it might fail if not valid SQLite)
-                // Actually MediaLibraryBuilder.createDatabase creates a file.
-                // For ringtones, we usually assume a library exists. If not, we might be in trouble.
-                // Let's assume we can proceed or that insertRingtones handles it.
-                // But MediaLibraryBuilder expects an OpaquePointer to an open DB.
-                // We need to write 'dbData' to a temp file first.
-                // If dbData is empty/nil, we should probably initialize a basic schema?
-                // For now, let's assume one exists or we fail.
+
                 Logger.shared.log("[DeviceManager] WARNING: No DB found. Ringtone injection might fail if no library exists.")
                 dbData = Data()
             }

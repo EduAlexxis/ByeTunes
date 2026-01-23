@@ -120,14 +120,13 @@ struct ContentView: View {
             
             if ext == "m4r" {
                 // It's a ringtone
-                if let ringtone = try? RingtoneMetadata.fromURL(destURL) {
-                    ringtones.append(ringtone)
-                    selectedTab = 1 // Switch to Ringtones tab
-                    print("[ContentView] Added ringtone: \(ringtone.name)")
-                    
-                    // Auto-inject ringtone
-                    autoInjectRingtones([ringtone])
-                }
+                let ringtone = RingtoneMetadata.fromURL(destURL)
+                ringtones.append(ringtone)
+                selectedTab = 1 // Switch to Ringtones tab
+                print("[ContentView] Added ringtone: \(ringtone.name)")
+                
+                // Auto-inject ringtone
+                autoInjectRingtones([ringtone])
             } else if ["mp3", "m4a", "wav", "flac", "aiff"].contains(ext) {
                 // It's a song
                 Task {
@@ -214,7 +213,7 @@ struct ContentView: View {
                 self.isInjecting = false
                 if success {
                     self.status = "Ringtone injected!"
-                    // Done, clear them out
+                    // Clear them out
                     for ringtone in ringtonesToInject {
                         self.ringtones.removeAll { $0.id == ringtone.id }
                     }
@@ -245,11 +244,10 @@ struct ContentView: View {
                 
                 if ext == "m4r" {
                     // Handle as ringtone
-                    if let ringtone = try? RingtoneMetadata.fromURL(fileURL) {
-                        await MainActor.run {
-                            ringtones.append(ringtone)
-                            selectedTab = 1 // Switch to Ringtones tab
-                        }
+                    let ringtone = RingtoneMetadata.fromURL(fileURL)
+                    await MainActor.run {
+                        ringtones.append(ringtone)
+                        selectedTab = 1 // Switch to Ringtones tab
                     }
                 } else if ["mp3", "m4a", "wav", "flac", "aiff"].contains(ext) {
                     // Handle as music

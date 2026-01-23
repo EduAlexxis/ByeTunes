@@ -141,7 +141,7 @@ struct OnboardingView: View {
                 handlePairingImport(url: url)
             }
         }
-        .onChange(of: manager.heartbeatReady) { ready in
+        .onChange(of: manager.heartbeatReady) { _, ready in
             if ready {
                 self.isConnecting = false
                 self.statusMessage = "Successfully Connected!"
@@ -153,7 +153,7 @@ struct OnboardingView: View {
                 }
             }
         }
-        .onChange(of: manager.connectionStatus) { newStatus in
+        .onChange(of: manager.connectionStatus) { _, newStatus in
             if isConnecting {
                 self.statusMessage = newStatus
                 if newStatus.contains("Failed") {

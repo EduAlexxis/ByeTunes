@@ -14,7 +14,7 @@ struct LogViewer: View {
                         .padding()
                         .id("bottom")
                 }
-                .onChange(of: logger.logs) { _ in
+                .onChange(of: logger.logs) {
                     proxy.scrollTo("bottom", anchor: .bottom)
                 }
             }

@@ -131,7 +131,7 @@ struct MusicView: View {
                     .opacity(songs.isEmpty ? 0.5 : 1)
                     
                     // Inject as Playlist
-                    // Inject as Playlist
+                    
                     Button {
                         isFetchingPlaylists = true
                         // status = "Fetching playlists..."
@@ -227,7 +227,7 @@ struct MusicView: View {
                                         // Calculate edit state
                                         let source = UserDefaults.standard.string(forKey: "metadataSource")
                                         let isAPISource = source == "itunes" || source == "deezer"
-                                        // User wants to edit even if autofetch is on, so we just check if we have a valid source
+                                         
                                         let canEdit = isAPISource
                                         
                                         SongRowView(
@@ -297,7 +297,7 @@ struct MusicView: View {
             .zIndex(100)
         }
     } // Close ZStack here
-    // Brace removed to continue modifier chain
+    
 
         .sheet(isPresented: $showingMusicPicker) {
             DocumentPicker(types: Self.supportedAudioTypes, allowsMultiple: true) { urls in
@@ -447,12 +447,8 @@ struct MusicView: View {
         
         let metadataSource = UserDefaults.standard.string(forKey: "metadataSource") ?? "local"
         let useiTunes = (metadataSource == "itunes")
-        let autofetch = UserDefaults.standard.bool(forKey: "autofetchMetadata") // Default is false usually if not set, but we handle logic
-        // If not set, bool returns false. So we need to consider if "default true" was needed. 
-        // User didn't specify default, but implied "if active". 
-        // Let's assume default is false unless set. 
-        // Wait, user said "if turn off when importing...". 
-        // I should set default to true in SettingsView maybe?
+        let autofetch = UserDefaults.standard.bool(forKey: "autofetchMetadata") 
+        
         
         Task {
             var importedSongs: [SongMetadata] = []
@@ -512,7 +508,7 @@ struct MusicView: View {
     }
     
     private func startInjectionProcess() {
-        // Simulate progress animation
+        // Progress animation
         let progressTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { timer in
             if self.injectProgress < 0.9 {
                 self.injectProgress += 0.02
@@ -583,7 +579,7 @@ struct MusicView: View {
         
         isInjecting = true
         injectProgress = 0
-        let displayParams = name ?? "Existing Playlist"
+
         
         // Refresh connection first
         manager.startHeartbeat { success in
@@ -625,7 +621,7 @@ struct MusicView: View {
                     self.injectProgress = 0
                     
                     if success {
-                        let finalName = name ?? "Selected"
+
                         self.showToast(title: "Playlist Updated", icon: "checkmark.circle.fill")
                         withAnimation {
                             self.songs.removeAll()

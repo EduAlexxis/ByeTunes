@@ -1,5 +1,6 @@
 import AppIntents
 import Foundation
+import UniformTypeIdentifiers
 
 // MARK: - Inject Music
 
@@ -11,7 +12,7 @@ struct InjectMusicIntent: AppIntent {
     // Need to open app so we can talk to the device
     static var openAppWhenRun: Bool = true
     
-    @Parameter(title: "Audio Files", description: "Select audio files to inject", supportedTypeIdentifiers: ["public.audio", "public.mp3", "public.mpeg-4-audio", "com.apple.m4a-audio", "org.xiph.flac", "com.microsoft.waveform-audio"])
+    @Parameter(title: "Audio Files", description: "Select audio files to inject", supportedContentTypes: [.audio, .mp3, .mpeg4Audio, .wav, UTType("com.apple.m4a-audio")!, UTType("org.xiph.flac")!])
     var audioFiles: [IntentFile]
     
     @MainActor
@@ -74,7 +75,7 @@ struct InjectRingtoneIntent: AppIntent {
     // Need to open app so we can talk to the device
     static var openAppWhenRun: Bool = true
     
-    @Parameter(title: "Ringtone File", description: "Select a ringtone file to inject", supportedTypeIdentifiers: ["public.audio", "com.apple.m4a-audio", "public.mp3"])
+    @Parameter(title: "Ringtone File", description: "Select a ringtone file to inject", supportedContentTypes: [.audio, .mp3, UTType("com.apple.m4a-audio")!])
     var ringtoneFile: IntentFile
     
     @MainActor

@@ -1,7 +1,7 @@
 import Foundation
 import AVFoundation
 
-/// Representa la metadata
+/// Song metadata
 struct SongMetadata: Identifiable {
     let id = UUID()
     
@@ -22,7 +22,7 @@ struct SongMetadata: Identifiable {
     var discNumber: Int?
     var discCount: Int?
     
-    /// Artwork token pa referencia en la database
+    /// Artwork token 
     var artworkToken: String {
         return "local://\(remoteFilename)"
     }
@@ -118,8 +118,8 @@ struct SongMetadata: Identifiable {
                 }
             case .commonKeyCreationDate:
                 if let value = try? await item.load(.stringValue),
-                   let yearInt = Int(value.prefix(4)) {
-                    year = yearInt
+                   let extracted = extractYear(from: value) {
+                    year = extracted
                 }
             case .commonKeyArtwork:
                 if let data = try? await item.load(.dataValue) {
@@ -148,7 +148,7 @@ struct SongMetadata: Identifiable {
             let identifier = item.identifier?.rawValue ?? ""
             let combined = "\(identifier)|\(keyString)".uppercased()
             
-            // print("[SongMetadata] Key: \(combined)") // Uncomment to debug
+            // print("[SongMetadata] Key: \(combined)") 
             
             // TRACK NUMBER
             if trackNumber == nil {
@@ -198,9 +198,7 @@ struct SongMetadata: Identifiable {
                 }
             }
 
-            // FLAC Vorbis Comments specific check (TITLE, ARTIST keys) if still unknown
-            // This is moved here to ensure it runs after common metadata but before final fallback.
-            // It also uses the `allMetadata` array.
+            
             if let val = try? await item.load(.stringValue), !val.isEmpty {
                 if (combined.contains("TITLE") || combined.contains("NAM")) && title == filenameWithoutExt { title = val }
                 if (combined.contains("ARTIST") || combined.contains("PERFORMER")) && !combined.contains("ALBUMARTIST") && artist == "Unknown Artist" { artist = val }
@@ -218,13 +216,12 @@ struct SongMetadata: Identifiable {
                    }
                 }
 
-                // Year extraction: check for DATE, YEAR, TYER (ID3v2.3), TDRC (ID3v2.4), ©day (iTunes/M4A)
+                // Year extraction
                 if year == Calendar.current.component(.year, from: Date()) {
                     if combined.contains("DATE") || combined.contains("YEAR") || combined.contains("TYER") || combined.contains("TDRC") || combined.contains("DAY") {
-                        // Try to extract 4-digit year from the value (could be "2019", "2019-05-21", etc.)
-                        if let yearInt = Int(val.prefix(4)), yearInt >= 1000 && yearInt <= 2100 {
-                            year = yearInt
-                            print("[SongMetadata] Extracted year: \(year) from key: \(combined)")
+                        if let extracted = extractYear(from: val) {
+                            year = extracted
+                            print("[SongMetadata] Extracted year: \(year) from key: \(combined) (Val: \(val))")
                         }
                     }
                 }
@@ -255,6 +252,35 @@ struct SongMetadata: Identifiable {
             discNumber: discNumber,
             discCount: discCount
         )
+    }
+    
+    /// Helper to extract a valid 4-digit year (1900-2100) from a string
+    static private func extractYear(from string: String) -> Int? {
+        // Regex to look for 4 digits: \b(19|20)\d{2}\b
+        // Matches 19xx or 20xx
+        // Also allow 2100 just in case
+        
+        do {
+            let regex = try NSRegularExpression(pattern: "\\b(19|20)\\d{2}\\b")
+            let nsString = string as NSString
+            let results = regex.matches(in: string, range: NSRange(location: 0, length: nsString.length))
+            
+            if let first = results.first {
+                let match = nsString.substring(with: first.range)
+                if let y = Int(match), y >= 1900 && y <= 2100 {
+                    return y
+                }
+            }
+        } catch {
+            return nil
+        }
+        
+        // Fallback: simple 4 digit prefix if it looks sane (for "2023-05-21")
+        if let prefixInt = Int(string.prefix(4)), prefixInt >= 1900 && prefixInt <= 2100 {
+            return prefixInt
+        }
+        
+        return nil
     }
 }
 

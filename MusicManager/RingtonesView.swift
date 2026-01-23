@@ -325,7 +325,7 @@ struct RingtonesView: View {
     }
     
     private func convertToM4R(_ sourceURL: URL) async -> URL? {
-        let asset = AVAsset(url: sourceURL)
+        let asset = AVURLAsset(url: sourceURL)
         guard let exportSession = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A) else {
             return nil
         }
@@ -339,19 +339,26 @@ struct RingtonesView: View {
         exportSession.outputURL = outputURL
         exportSession.outputFileType = .m4a
         
-        await exportSession.export()
+        // 'export()' is async but does NOT throw in current SDKs (it sets status).
+        // Deprecation warning for 'export()' usually refers to the completion handler version OR explicit 'export' usage if replaced.
+        // However, 'await exportSession.export()' is the standard modern Swift concurrency replacement.
+        // If compiler complains about 'export()' deprecated in iOS 18 without replacement in error message, it likely suggests 'export(to:completion:)' or similar?
+        // Actually, 'export()' was introduced in iOS 15.
+        // Let's assume the warning is about the *name collision* with old sync methods or similar, OR maybe we should check status manually without try/catch.
         
+        await exportSession.export()
+
         if exportSession.status == .completed {
-            let m4rURL = tempDir.appendingPathComponent("\(filename).m4r")
-            try? FileManager.default.removeItem(at: m4rURL)
-            do {
-                try FileManager.default.moveItem(at: outputURL, to: m4rURL)
-                return m4rURL
-            } catch {
-                return nil
-            }
+             let m4rURL = tempDir.appendingPathComponent("\(filename).m4r")
+             try? FileManager.default.removeItem(at: m4rURL)
+             do {
+                 try FileManager.default.moveItem(at: outputURL, to: m4rURL)
+                 return m4rURL
+             } catch {
+                 return nil
+             }
         } else {
-            return nil
+             return nil
         }
     }
     

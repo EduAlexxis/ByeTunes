@@ -62,10 +62,7 @@ class MediaLibraryBuilder {
     
     /// Generates the SQL Hex Literal for the integrity blob.
     private static func generateIntegrityHex(filename: String) -> String {
-        // Integrity based on relative path from Music folder
-        // Common format is implicitly relative to /iTunes_Control/Music/F00/
-        // 3uTools/Legacy often just hashes the filename or path/filename
-        // Return empty integrity for now to match some successful 3uTools examples
+        
         return "X''"
         /*
         let pathKey = "iTunes_Control/Music/F00/\(filename)"
@@ -123,8 +120,7 @@ class MediaLibraryBuilder {
         }
         defer { sqlite3_close(db) }
         
-        // Poner settings de PRAGMA pa compatibilidad con iOS
-        // La Media Library usa DELETE journal mode, nada de WAL aqui
+        
         var errMsg: UnsafeMutablePointer<CChar>?
         sqlite3_exec(db, "PRAGMA journal_mode=DELETE;", nil, nil, &errMsg)
         sqlite3_exec(db, "PRAGMA encoding='UTF-8';", nil, nil, &errMsg)
@@ -159,10 +155,7 @@ class MediaLibraryBuilder {
         return (dbPath, artworkInfo, songPids)
     }
     
-    /// Agrega rolas a una database de MediaLibrary que ya exista
-    /// Retorna el URL a la database modificada y una lista de filenames que ya estan
-    /// Agrega rolas a una database de MediaLibrary que ya exista
-    /// Retorna el URL a la database modificada y una lista de filenames que ya estan
+    
     static func addSongsToExistingDatabase(
         existingDbData: Data,
         walData: Data? = nil,
@@ -349,8 +342,7 @@ class MediaLibraryBuilder {
             try? executeSQL(db, "DELETE FROM lyrics WHERE item_pid=\(pid)")
             try? executeSQL(db, "DELETE FROM chapter WHERE item_pid=\(pid)")
             
-            // Note: We leave artwork tokens as they might be shared or hard to cleanup without orphaned checks
-            // But usually item deletion is enough to hide it from UI.
+            
         }
     }
     
@@ -548,8 +540,7 @@ class MediaLibraryBuilder {
                 artistPid = newPid
             }
             
-            // Get or create album artist - use explicitly parsed Album Artist, or fallback to Artist
-            // This fixes issues where Album Artist (e.g. "JACKBOYS") differs from Track Artist (e.g. "Travis Scott...")
+            
             let effectiveAlbumArtistName = song.albumArtist ?? song.artist
             let albumArtistPid: Int64
             if let existing = albumArtists[effectiveAlbumArtistName] {
@@ -602,9 +593,18 @@ class MediaLibraryBuilder {
             let dbDiscNum = song.discNumber ?? 1
             let dbDiscCount = song.discCount ?? 1
             
-            // INSERT into item table using INSERT OR REPLACE to handle PID reuse (resurrection)
+            // Explicitly DELETE to ensure stale data (like bad years) is removed
+            // INSERT OR REPLACE *should* work, but let's be nuclear to fix the persistence issue.
+            try? executeSQL(db, "DELETE FROM item WHERE item_pid = \(itemPid)")
+            try? executeSQL(db, "DELETE FROM item_extra WHERE item_pid = \(itemPid)")
+            try? executeSQL(db, "DELETE FROM item_playback WHERE item_pid = \(itemPid)")
+            try? executeSQL(db, "DELETE FROM item_stats WHERE item_pid = \(itemPid)")
+            try? executeSQL(db, "DELETE FROM item_store WHERE item_pid = \(itemPid)")
+            try? executeSQL(db, "DELETE FROM item_search WHERE item_pid = \(itemPid)")
+            
+            // INSERT into item table
             try executeSQL(db, """
-                INSERT OR REPLACE INTO item (
+                INSERT INTO item (
                     item_pid, media_type, title_order, title_order_section,
                     item_artist_pid, item_artist_order, item_artist_order_section,
                     series_name_order, series_name_order_section,
@@ -635,7 +635,7 @@ class MediaLibraryBuilder {
             let escapedTitle = song.title.replacingOccurrences(of: "'", with: "''")
             let escapedFilename = song.remoteFilename.replacingOccurrences(of: "'", with: "''")
             try executeSQL(db, """
-                INSERT OR REPLACE INTO item_extra (
+                INSERT INTO item_extra (
                     item_pid, title, sort_title, disc_count, track_count, total_time_ms, year,
                     location, file_size, integrity, is_audible_audio_book, date_modified,
                     media_kind, content_rating, content_rating_level, is_user_disabled, bpm, genius_id,
@@ -651,7 +651,7 @@ class MediaLibraryBuilder {
             // INSERT into item_playback
             let audioFmt = audioFormatForExtension(URL(fileURLWithPath: song.remoteFilename).pathExtension)
             try executeSQL(db, """
-                INSERT OR REPLACE INTO item_playback (
+                INSERT INTO item_playback (
                     item_pid, audio_format, bit_rate, codec_type, codec_subtype, data_kind,
                     duration, has_video, relative_volume, sample_rate
                 ) VALUES (
@@ -806,7 +806,7 @@ class MediaLibraryBuilder {
             trackNum += 1
         }
         
-        // Insertar artistas nuevos nomas
+        // Insertar artistas nuevos
         for (artistName, artistPid) in newArtists {
             let escapedName = artistName.replacingOccurrences(of: "'", with: "''")
             let groupingKey = SongMetadata.generateGroupingKey(artistName)
@@ -848,8 +848,7 @@ class MediaLibraryBuilder {
             let groupingKey = SongMetadata.generateGroupingKey(albumName)
             let groupingHex = groupingKey.map { String(format: "%02x", $0) }.joined()
             if let song = songs.first(where: { $0.album == albumName }) {
-                // FIX: Use effective album artist name for lookup!
-                // Previously this used song.artist, which failed if Track Artist != Album Artist
+               
                 let effectiveName = song.albumArtist ?? song.artist
                 let aaPid = albumArtists[effectiveName] ?? 0
                 
@@ -1003,7 +1002,7 @@ class MediaLibraryBuilder {
 
         
         // Create indexes - CRITICAL for MPMediaLibrary to function
-        // IMPORTANTE: Crear los indexes - CRUCIAL pa que la MPMediaLibrary jale y no explote
+        
         try createIndexes(db: db)
     }
     
@@ -1139,14 +1138,7 @@ class MediaLibraryBuilder {
         Logger.shared.log("[MediaLibraryBuilder] Base data inserted")
     }
     
-    // MARK: - Song Insertion
-    
-
-    
-
-    
-    /// Generates 3uTools-style integrity for Ringtones
-    /// Format: Hex(filename + "iTunes_Control/Music/F00")
+        /// Format: Hex(filename + "iTunes_Control/Music/F00")
     static func generateRingtoneIntegrity(filename: String) -> String {
         // Ringtones usually reside in iTunes_Control/Ringtones
         // Match the same logic as songs for consistency
