@@ -13,6 +13,10 @@ struct SettingsView: View {
     @State private var toastTitle = ""
     @State private var toastIcon = ""
     
+    @AppStorage("metadataSource") private var metadataSource = "local"
+    @AppStorage("autofetchMetadata") private var autofetchMetadata = true
+    @AppStorage("storeRegion") private var storeRegion = "US"
+    
     var body: some View {
         ZStack(alignment: .bottom) {
             Color(.systemGroupedBackground)
@@ -186,6 +190,100 @@ struct SettingsView: View {
                 }
                 
                 
+                
+                // Metadata Section
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("METADATA")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(.secondary)
+                        .tracking(0.5)
+                    
+                    VStack(spacing: 0) {
+                        HStack {
+                            Image(systemName: "wand.and.stars")
+                                .font(.body)
+                                .foregroundColor(.primary)
+                                .frame(width: 28)
+                            
+                            Text("Metadata Source")
+                                .font(.body)
+                            
+                            Spacer()
+                            
+                            Picker("Metadata Source", selection: $metadataSource) {
+                                Text("Local Files").tag("local")
+                                Text("iTunes API").tag("itunes")
+                                Text("Deezer API").tag("deezer")
+                            }
+                            .pickerStyle(.menu)
+                            .labelsHidden()
+                        }
+                        .padding(.vertical, 14)
+                        .padding(.horizontal, 16)
+                        
+                        if metadataSource == "itunes" || metadataSource == "deezer" {
+                            Divider().padding(.leading, 56)
+                            
+                            Toggle(isOn: $autofetchMetadata) {
+                                HStack {
+                                    Image(systemName: "arrow.triangle.2.circlepath")
+                                        .font(.body)
+                                        .foregroundColor(.primary)
+                                        .frame(width: 28)
+                                    
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Autofetch")
+                                            .font(.body)
+                                        Text("Automatically fetch metadata on import")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                            }
+                            .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+                            .padding(.vertical, 10)
+                            .padding(.horizontal, 16)
+                            
+                            if metadataSource == "itunes" {
+                                Divider().padding(.leading, 56)
+                                
+                                HStack {
+                                    Image(systemName: "globe")
+                                        .font(.body)
+                                        .foregroundColor(.primary)
+                                        .frame(width: 28)
+                                    
+                                    Text("Store Region")
+                                        .font(.body)
+                                    
+                                    Spacer()
+                                    
+                                    Picker("Region", selection: $storeRegion) {
+                                        Text("🇺🇸 US").tag("US")
+                                        Text("🇲🇽 MX").tag("MX")
+                                        Text("🇪🇸 ES").tag("ES")
+                                        Text("🇬🇧 GB").tag("GB")
+                                        Text("JP JP").tag("JP")
+                                        Text("🇧🇷 BR").tag("BR")
+                                        Text("🇩🇪 DE").tag("DE")
+                                        Text("🇫🇷 FR").tag("FR")
+                                    }
+                                    .pickerStyle(.menu)
+                                    .labelsHidden()
+                                }
+                                .padding(.vertical, 10)
+                                .padding(.horizontal, 16)
+                            }
+                        }
+                    }
+                    .background(Color(.systemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color(.systemGray5), lineWidth: 1)
+                    )
+                }
                 
                 // Shortcuts
                 VStack(alignment: .leading, spacing: 12) {

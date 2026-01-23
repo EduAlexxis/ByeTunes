@@ -12,7 +12,6 @@ struct MusicView: View {
         let pid: Int64
         var id: Int64 { pid }
     }
-    
     @State private var showingMusicPicker = false
     @State private var injectProgress: CGFloat = 0
     @State private var showPlaylistAlert = false
@@ -29,6 +28,9 @@ struct MusicView: View {
     // Injection count state
     @State private var currentInjectIndex = 0
     @State private var totalInjectCount = 0
+    
+    // Manual Match State
+    @State private var selectedSongForMatch: SongMetadata?
 
     
     static var supportedAudioTypes: [UTType] {
@@ -222,9 +224,27 @@ struct MusicView: View {
                             VStack(spacing: 0) {
                                 ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
                                     VStack(spacing: 0) {
-                                        SongRowView(song: song) {
+                                        // Calculate edit state
+                                        let source = UserDefaults.standard.string(forKey: "metadataSource")
+                                        let isAPISource = source == "itunes" || source == "deezer"
+                                        // User wants to edit even if autofetch is on, so we just check if we have a valid source
+                                        let canEdit = isAPISource
+                                        
+                                        SongRowView(
+                                            song: song,
+                                            showEditButton: canEdit,
+                                            onEdit: {
+                                                selectedSongForMatch = song
+                                            }
+                                        ) {
                                             withAnimation(.easeOut(duration: 0.2)) {
                                                 songs.removeAll { $0.id == song.id }
+                                            }
+                                        }
+                                        .contentShape(Rectangle())
+                                        .onTapGesture {
+                                            if canEdit {
+                                                selectedSongForMatch = song
                                             }
                                         }
                                         
@@ -245,10 +265,6 @@ struct MusicView: View {
                         )
                     }
                 }
-                
-
-                // Status message removed (using Toasts now)
-                // Removed extra brace here
                 
                 Spacer() // Push content to top
             }
@@ -286,6 +302,19 @@ struct MusicView: View {
         .sheet(isPresented: $showingMusicPicker) {
             DocumentPicker(types: Self.supportedAudioTypes, allowsMultiple: true) { urls in
                 handleMusicImport(urls: urls)
+            }
+        }
+        .sheet(item: $selectedSongForMatch) { item in
+            if let index = songs.firstIndex(where: { $0.id == item.id }) {
+                iTunesSearchSheet(song: $songs[index], isPresented: Binding(
+                    get: { selectedSongForMatch != nil },
+                    set: { if !$0 { selectedSongForMatch = nil } }
+                ))
+            } else {
+                VStack {
+                    Text("Error: Song not found")
+                    Button("Close") { selectedSongForMatch = nil }
+                }
             }
         }
         .alert("Create Playlist", isPresented: $showPlaylistAlert) {
@@ -416,6 +445,15 @@ struct MusicView: View {
     func handleMusicImport(urls: [URL]?) {
         guard let urls = urls, !urls.isEmpty else { return }
         
+        let metadataSource = UserDefaults.standard.string(forKey: "metadataSource") ?? "local"
+        let useiTunes = (metadataSource == "itunes")
+        let autofetch = UserDefaults.standard.bool(forKey: "autofetchMetadata") // Default is false usually if not set, but we handle logic
+        // If not set, bool returns false. So we need to consider if "default true" was needed. 
+        // User didn't specify default, but implied "if active". 
+        // Let's assume default is false unless set. 
+        // Wait, user said "if turn off when importing...". 
+        // I should set default to true in SettingsView maybe?
+        
         Task {
             var importedSongs: [SongMetadata] = []
             
@@ -431,7 +469,11 @@ struct MusicView: View {
                 try? FileManager.default.removeItem(at: destURL)
                 try? FileManager.default.copyItem(at: url, to: destURL)
                 
-                if let song = try? await SongMetadata.fromURL(destURL) {
+                if var song = try? await SongMetadata.fromURL(destURL) {
+                    // Enrich if option is enabled AND autofetch is ON
+                    if useiTunes && autofetch {
+                        song = await SongMetadata.enrichWithiTunesMetadata(song)
+                    }
                     importedSongs.append(song)
                 }
             }

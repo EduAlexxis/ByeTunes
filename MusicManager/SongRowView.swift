@@ -2,6 +2,8 @@ import SwiftUI
 
 struct SongRowView: View {
     let song: SongMetadata
+    var showEditButton: Bool = false
+    var onEdit: () -> Void = {}
     let onDelete: () -> Void
     
     var body: some View {
@@ -37,6 +39,20 @@ struct SongRowView: View {
             }
             
             Spacer()
+            
+            // Edit button (Manual Match)
+            if showEditButton {
+                Button {
+                    onEdit()
+                } label: {
+                    Image(systemName: "pencil")
+                        .font(.caption.weight(.medium))
+                        .foregroundColor(Color.accentColor)
+                        .frame(width: 28, height: 28)
+                        .background(Color.accentColor.opacity(0.1))
+                        .clipShape(Circle())
+                }
+            }
             
             // Delete button
             Button {

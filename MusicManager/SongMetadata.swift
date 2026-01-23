@@ -257,3 +257,241 @@ struct SongMetadata: Identifiable {
         )
     }
 }
+
+// MARK: - iTunes Metadata Data Structures
+
+struct iTunesSearchResult: Codable {
+    let results: [iTunesSong]
+}
+
+struct iTunesSong: Codable, Identifiable {
+    var id: Int { trackId ?? Int.random(in: 0...Int.max) }
+    let trackId: Int?
+    let trackName: String?
+    let artistName: String?
+    let collectionName: String?
+    let primaryGenreName: String?
+    let releaseDate: String?
+    let artworkUrl100: String?
+    let trackNumber: Int?
+    let trackCount: Int?
+    let discNumber: Int?
+    let discCount: Int?
+}
+
+// MARK: - Enrichment Logic
+
+extension SongMetadata {
+    
+    /// Perform a raw search on iTunes API
+    static func searchiTunes(query: String) async -> [iTunesSong] {
+        let region = UserDefaults.standard.string(forKey: "storeRegion") ?? "US"
+        let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        guard let url = URL(string: "https://itunes.apple.com/search?term=\(encodedQuery)&entity=song&limit=10&country=\(region)") else {
+            return []
+        }
+        
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            let result = try JSONDecoder().decode(iTunesSearchResult.self, from: data)
+            return result.results
+        } catch {
+            print("[SongMetadata] iTunes search failed: \(error)")
+            return []
+        }
+    }
+    
+    /// Apply an iTunes match to a song (including fetching artwork)
+    static func applyiTunesMatch(_ match: iTunesSong, to song: SongMetadata) async -> SongMetadata {
+        var newSong = song
+        
+        // Update metadata
+        if let t = match.trackName { newSong.title = t }
+        if let a = match.artistName { newSong.artist = a }
+        if let c = match.collectionName { newSong.album = c }
+        if let g = match.primaryGenreName { newSong.genre = g }
+        
+        if let tn = match.trackNumber { newSong.trackNumber = tn }
+        if let tc = match.trackCount { newSong.trackCount = tc }
+        if let dn = match.discNumber { newSong.discNumber = dn }
+        if let dc = match.discCount { newSong.discCount = dc }
+        
+        if let dateStr = match.releaseDate,
+           let yearInt = Int(dateStr.prefix(4)) {
+            newSong.year = yearInt
+        }
+        
+        // Fetch High-Res Artwork
+        if let artUrl = match.artworkUrl100 {
+            // Resize to 1200x1200bb for high quality
+            let highResUrlString = artUrl.replacingOccurrences(of: "100x100bb", with: "1200x1200bb")
+            if let highResUrl = URL(string: highResUrlString),
+               let (artData, _) = try? await URLSession.shared.data(from: highResUrl) {
+                newSong.artworkData = artData
+                print("[SongMetadata] Updated artwork with iTunes High-Res version: \(artData.count) bytes")
+            }
+        }
+        
+        return newSong
+    }
+
+    /// Enrich the existing metadata by searching on iTunes API (Auto Mode)
+    static func enrichWithiTunesMetadata(_ song: SongMetadata) async -> SongMetadata {
+        print("[SongMetadata] Searching iTunes for: \(song.artist) - \(song.title)")
+        
+        let query = "\(song.artist) \(song.title)"
+        let results = await searchiTunes(query: query)
+        
+        // Find the best match
+        var bestMatch: iTunesSong?
+        
+        for match in results {
+            guard let remoteArtist = match.artistName,
+                  let remoteTitle = match.trackName else { continue }
+            
+            // Artist Validation Strategy
+            if song.artist != "Unknown Artist" {
+                let localNorm = song.artist.lowercased().filter { !$0.isPunctuation }
+                let remoteNorm = remoteArtist.lowercased().filter { !$0.isPunctuation }
+                
+                // Check if one contains the other
+                if localNorm.contains(remoteNorm) || remoteNorm.contains(localNorm) {
+                    bestMatch = match
+                    print("[SongMetadata] ✓ Validated match: \(remoteTitle) by \(remoteArtist)")
+                    break // Found a valid one!
+                } else {
+                    print("[SongMetadata] x Rejected match: \(remoteTitle) by \(remoteArtist) (Artist mismatch)")
+                }
+            } else {
+                // If local artist is unknown, take the first valid result
+                bestMatch = match
+                break
+            }
+        }
+        
+        guard let match = bestMatch else {
+            print("[SongMetadata] No valid iTunes match found after filtering.")
+            return song
+        }
+        
+        return await applyiTunesMatch(match, to: song)
+    }
+}
+
+// MARK: - Deezer Metadata Data Structures
+
+struct DeezerSearchResult: Codable {
+    let data: [DeezerSong]
+}
+
+struct DeezerSong: Codable, Identifiable {
+    let id: Int
+    let title: String
+    let artist: DeezerReference
+    let album: DeezerAlbumReference
+    let duration: Int
+    
+    // Helper to conform to similar interface if needed
+    var trackName: String { title }
+    var artistName: String { artist.name }
+    var albumName: String { album.title }
+    var artworkUrl: String { album.cover_xl }
+}
+
+struct DeezerReference: Codable {
+    let name: String
+}
+
+struct DeezerAlbumReference: Codable {
+    let title: String
+    let cover_xl: String
+}
+
+struct DeezerTrackDetails: Codable {
+    let track_position: Int?
+    let disk_number: Int?
+    let release_date: String? // Format: YYYY-MM-DD
+}
+
+// MARK: - Enrichment Logic Extension
+
+extension SongMetadata {
+    
+    /// Perform a raw search on Deezer API
+    static func searchDeezer(query: String) async -> [DeezerSong] {
+        let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        guard let url = URL(string: "https://api.deezer.com/search?q=\(encodedQuery)&limit=10") else {
+            return []
+        }
+        
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            let result = try JSONDecoder().decode(DeezerSearchResult.self, from: data)
+            return result.data
+        } catch {
+            print("[SongMetadata] Deezer search failed: \(error)")
+            return []
+        }
+    }
+    
+    static func fetchDeezerTrackDetails(id: Int) async -> DeezerTrackDetails? {
+        guard let url = URL(string: "https://api.deezer.com/track/\(id)") else { return nil }
+        
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            return try JSONDecoder().decode(DeezerTrackDetails.self, from: data)
+        } catch {
+            print("[SongMetadata] Failed to fetch Deezer track details: \(error)")
+            return nil
+        }
+    }
+    
+    /// Apply a Deezer match to a song
+    static func applyDeezerMatch(_ match: DeezerSong, to song: SongMetadata) async -> SongMetadata {
+        var newSong = song
+        
+        newSong.title = match.title
+        newSong.artist = match.artist.name
+        newSong.album = match.album.title
+        
+        // Deezer duration is in seconds
+        newSong.durationMs = match.duration * 1000
+        
+        // Fetch Detailed Info (Track, Disc, Year)
+        if let details = await fetchDeezerTrackDetails(id: match.id) {
+            if let t = details.track_position { newSong.trackNumber = t }
+            if let d = details.disk_number { newSong.discNumber = d }
+            
+            if let releaseDate = details.release_date {
+                // Parse YYYY-MM-DD
+                let components = releaseDate.split(separator: "-")
+                if let yearStr = components.first, let yearInt = Int(yearStr) {
+                    newSong.year = yearInt
+                }
+            }
+            print("[SongMetadata] Enhanced with Deezer details: Trk \(details.track_position ?? 0), Disc \(details.disk_number ?? 0), Year \(newSong.year)")
+        }
+        
+        // Fetch High-Res Artwork (cover_xl is 1000x1000 usually)
+        if let artUrl = URL(string: match.album.cover_xl),
+           let (artData, _) = try? await URLSession.shared.data(from: artUrl) {
+            newSong.artworkData = artData
+            print("[SongMetadata] Updated artwork with Deezer High-Res version: \(artData.count) bytes")
+        }
+        
+        return newSong
+    }
+    
+    static func enrichWithDeezerMetadata(_ song: SongMetadata) async -> SongMetadata {
+        print("[SongMetadata] Searching Deezer for: \(song.artist) - \(song.title)")
+        let query = "\(song.artist) \(song.title)"
+        let results = await searchDeezer(query: query)
+        
+        if let firstMatch = results.first {
+             print("[SongMetadata] ✓ Deezer match: \(firstMatch.title) by \(firstMatch.artist.name)")
+             return await applyDeezerMatch(firstMatch, to: song)
+        }
+        
+        return song
+    }
+}
