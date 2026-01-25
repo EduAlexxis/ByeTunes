@@ -30,6 +30,8 @@ To compile the app, you need to obtain these two files and place them in the `Mu
 1.  `libidevice_ffi.a` (Static Library)
 2.  `idevice.h` (Header File)
 
+You can obtain these files from: [https://github.com/jkcoxson/idevice](https://github.com/jkcoxson/idevice)
+
 *If you don't have these files, the project will not compile.*
 
 ### Build Steps
