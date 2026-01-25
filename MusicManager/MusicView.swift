@@ -454,12 +454,7 @@ struct MusicView: View {
             var importedSongs: [SongMetadata] = []
             
             for url in urls {
-                let needsSecurityScope = url.startAccessingSecurityScopedResource()
-                defer {
-                    if needsSecurityScope {
-                        url.stopAccessingSecurityScopedResource()
-                    }
-                }
+                // Since we are using asCopy: true, we don't need security scoped access
                 
                 let destURL = URL.documentsDirectory.appendingPathComponent(url.lastPathComponent)
                 try? FileManager.default.removeItem(at: destURL)

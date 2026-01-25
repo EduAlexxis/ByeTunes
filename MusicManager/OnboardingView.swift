@@ -166,12 +166,7 @@ struct OnboardingView: View {
     func handlePairingImport(url: URL?) {
         guard let url = url else { return }
         
-        let needsSecurityScope = url.startAccessingSecurityScopedResource()
-        defer {
-            if needsSecurityScope {
-                url.stopAccessingSecurityScopedResource()
-            }
-        }
+        // Since we are using asCopy: true, we don't need security scoped access
         
         let destination = manager.pairingFile
         

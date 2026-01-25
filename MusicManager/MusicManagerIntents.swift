@@ -12,7 +12,7 @@ struct InjectMusicIntent: AppIntent {
     
     static var openAppWhenRun: Bool = true
     
-    @Parameter(title: "Audio Files", description: "Select audio files to inject", supportedContentTypes: [.audio, .mp3, .mpeg4Audio, .wav, UTType("com.apple.m4a-audio")!, UTType("org.xiph.flac")!])
+    @Parameter(title: "Audio Files")
     var audioFiles: [IntentFile]
     
     @MainActor
@@ -75,7 +75,7 @@ struct InjectRingtoneIntent: AppIntent {
     
     static var openAppWhenRun: Bool = true
     
-    @Parameter(title: "Ringtone File", description: "Select a ringtone file to inject", supportedContentTypes: [.audio, .mp3, UTType("com.apple.m4a-audio")!])
+    @Parameter(title: "Ringtone File")
     var ringtoneFile: IntentFile
     
     @MainActor

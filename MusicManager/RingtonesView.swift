@@ -299,8 +299,8 @@ struct RingtonesView: View {
         
         Task {
             for url in urls {
-                 let needsScope = url.startAccessingSecurityScopedResource()
-                 defer { if needsScope { url.stopAccessingSecurityScopedResource() } }
+                 
+                 // Since we are using asCopy: true, we don't need security scoped access
                  
                  let ext = url.pathExtension.lowercased()
                  var finalURL: URL?
