@@ -2,7 +2,7 @@
 
 **Say goodbye to iTunes sync!**
 
-ByeTunes is a native iOS app that lets you inject music (MP3, M4A, FLAC) and ringtones directly into your device's media library—without needing a computer connection for every sync. It communicates directly with the iOS media database, giving you the power to manage your music on your terms.
+ByeTunes is a native iOS app that lets you inject music (MP3, M4A, FLAC, WAV) and ringtones directly into your device's media library—without needing a computer connection for every sync. It communicates directly with the iOS media database, giving you the power to manage your music on your terms.
 
 ## ✨ Features
 
@@ -10,7 +10,7 @@ ByeTunes is a native iOS app that lets you inject music (MP3, M4A, FLAC) and rin
 -   **Ringtone Manager**: Inject custom ringtones (`.m4r` and `.mp3` auto-conversion).
 -   **Playlist Support**: Create and manage playlists on the fly.
 -   **No Computer Needed** (after setup): Once paired, you're free!
--   **Metadata Editing**: Edit artist, album, and artwork details before injecting.
+-   **Metadata Editing**: Auto-fetched from iTunes or Deezer.
 
 ## 🛠 Compilation Instructions
 
@@ -51,7 +51,7 @@ You can obtain these files from: [https://github.com/jkcoxson/idevice](https://g
 
 1.  **Pairing**:
     -   On first launch, you'll see an "Import Pairing File" screen.
-    -   You need to get a `pairing file` (often created when you trust a computer).
+    -   You need to get a `pairing file`.
     -   Export this file from your computer and Airdrop/Save it to your iPhone.
     -   Import it into ByeTunes.
 2.  **Add Music**:
