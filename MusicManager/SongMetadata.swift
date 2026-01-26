@@ -21,6 +21,7 @@ struct SongMetadata: Identifiable {
     var trackCount: Int?
     var discNumber: Int?
     var discCount: Int?
+    var lyrics: String?
     
     
     var artworkToken: String {
@@ -82,6 +83,7 @@ struct SongMetadata: Identifiable {
         var trackCount: Int?
         var discNumber: Int?
         var discCount: Int?
+        var lyrics: String?
         
         
         if filenameWithoutExt.contains(" - ") {
@@ -225,6 +227,14 @@ struct SongMetadata: Identifiable {
                         }
                     }
                 }
+                
+                // Lyrics Extraction
+                if lyrics == nil {
+                    if combined.contains("USLT") || combined.contains("LYRICS") || combined.contains("UNSYNC") || keyString == "\u{00A9}lyr" {
+                         lyrics = SongMetadata.cleanLyrics(val)
+                         print("[SongMetadata] Extracted and cleaned lyrics from key: \(combined)")
+                    }
+                }
             }
         }
         
@@ -250,7 +260,8 @@ struct SongMetadata: Identifiable {
             trackNumber: trackNumber,
             trackCount: trackCount,
             discNumber: discNumber,
-            discCount: discCount
+            discCount: discCount,
+            lyrics: lyrics
         )
     }
     
@@ -281,6 +292,23 @@ struct SongMetadata: Identifiable {
         }
         
         return nil
+    }
+    
+    static private func cleanLyrics(_ rawLyrics: String) -> String {
+        // 1. Remove metadata headers like [ti:Title], [ar:Artist], etc.
+        // regex: \[([a-z]+):.*\]
+        let withoutHeaders = rawLyrics.replacingOccurrences(of: #"\[([a-z]+):.*\]"#, with: "", options: .regularExpression)
+        
+        // 2. Remove timestamps like [00:21.26] or [00:21]
+        // regex: \[\d{2,}:\d{2}(\.\d{2,})?\]
+        let withoutTimestamps = withoutHeaders.replacingOccurrences(of: #"\[\d{2,}:\d{2}(\.\d{2,})?\]"#, with: "", options: .regularExpression)
+        
+        // 3. Clean up extra whitespace/newlines
+        let lines = withoutTimestamps.components(separatedBy: .newlines)
+        let cleanLines = lines.map { $0.trimmingCharacters(in: .whitespaces) }
+                              .filter { !$0.isEmpty }
+        
+        return cleanLines.joined(separator: "\n")
     }
 }
 

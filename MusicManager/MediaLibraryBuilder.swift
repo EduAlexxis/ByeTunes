@@ -218,6 +218,11 @@ class MediaLibraryBuilder {
             Logger.shared.log("[MediaLibraryBuilder] WARNING: Database integrity check failed, but continuing...")
         }
         
+        // Ensure base_location 3840 exists (Crucial for Subscription/Cloud libraries that might miss it)
+        Logger.shared.log("[MediaLibraryBuilder] Ensuring base_location 3840/3900 exist...")
+        try? executeSQL(db, "INSERT OR IGNORE INTO base_location (base_location_id, path) VALUES (3840, 'iTunes_Control/Music/F00')")
+        try? executeSQL(db, "INSERT OR IGNORE INTO base_location (base_location_id, path) VALUES (3900, 'iTunes_Control/Ringtones')")
+        
         
         
         if let onDeviceFiles = existingOnDeviceFiles {
@@ -673,8 +678,13 @@ class MediaLibraryBuilder {
             """)
             
             
-            try executeSQL(db, "INSERT OR REPLACE INTO lyrics (item_pid) VALUES (\(itemPid))")
+            let lyricsContent = song.lyrics?.replacingOccurrences(of: "'", with: "''") ?? ""
+            let hasLyrics = !lyricsContent.isEmpty
             
+            try executeSQL(db, """
+                INSERT OR REPLACE INTO lyrics (item_pid, lyrics, store_lyrics_available, time_synced_lyrics_available) 
+                VALUES (\(itemPid), '\(lyricsContent)', 0, 0)
+            """)
             
             try executeSQL(db, "INSERT OR REPLACE INTO chapter (item_pid) VALUES (\(itemPid))")
             
