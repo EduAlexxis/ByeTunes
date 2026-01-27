@@ -350,9 +350,53 @@ class DeviceManager: ObservableObject {
              _ = afc_make_directory(afc, "/iTunes_Control/iTunes/Artwork/Originals")
             
             afc_client_free(afc)
+
+            
             self.sendSyncFinishedNotification()
             Logger.shared.log("[DeviceManager] Library nuke complete.")
             completion(true)
+        }
+    }
+    
+    private func cleanUpOrphanedFiles(validFilenames: Set<String>, completion: @escaping (Int) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            var afc: AfcClientHandle?
+            afc_client_connect(self.provider, &afc)
+            
+            guard afc != nil else {
+                Logger.shared.log("[DeviceManager] GC: Failed to connect AFC")
+                completion(0)
+                return
+            }
+            
+            let musicDir = "/iTunes_Control/Music/F00"
+            var entries: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
+            var count: Int = 0
+            
+            let err = afc_list_directory(afc, musicDir, &entries, &count)
+            
+            var deletedCount = 0
+            
+            if err == nil, let list = entries {
+                for i in 0..<count {
+                    if let ptr = list[i] {
+                        let filename = String(cString: ptr)
+                        if filename != "." && filename != ".." {
+                            // If file on disk is NOT in the database (validFilenames), delete it.
+                            if !validFilenames.contains(filename) {
+                                let path = "\(musicDir)/\(filename)"
+                                Logger.shared.log("[DeviceManager] GC: Deleting orphan -> \(filename)")
+                                afc_remove_path(afc, path)
+                                deletedCount += 1
+                            }
+                        }
+                    }
+                }
+                free(entries)
+            }
+            
+            afc_client_free(afc)
+            completion(deletedCount)
         }
     }
     
@@ -447,6 +491,9 @@ class DeviceManager: ObservableObject {
             
             let parentDir = (remotePath as NSString).deletingLastPathComponent
             afc_make_directory(afc, parentDir)
+
+            // Force delete existing file to prevent appending/stitching
+            afc_remove_path(afc, remotePath)
             
             afc_file_open(afc, remotePath, AfcWrOnly, &file)
             
@@ -843,12 +890,20 @@ class DeviceManager: ObservableObject {
             
             
             progress("Finalizing...")
-            Logger.shared.log("[DeviceManager] Step 6: Sending sync notification")
-            self.sendSyncFinishedNotification()
+            Logger.shared.log("[DeviceManager] Step 6: Garbage Collection")
             
-            progress("Complete! Restart your iPhone.")
-            Logger.shared.log("[DeviceManager] Injection complete!")
-            DispatchQueue.main.async { completion(true) }
+            self.cleanUpOrphanedFiles(validFilenames: existingFiles) { deletedCount in
+                if deletedCount > 0 {
+                   Logger.shared.log("[DeviceManager] Garbage Collection finished. Deleted \(deletedCount) orphaned files.")
+                }
+                
+                Logger.shared.log("[DeviceManager] Step 7: Sending sync notification")
+                self.sendSyncFinishedNotification()
+                
+                progress("Complete! Restart your iPhone.")
+                Logger.shared.log("[DeviceManager] Injection complete!")
+                DispatchQueue.main.async { completion(true) }
+            }
         }
     }
     
