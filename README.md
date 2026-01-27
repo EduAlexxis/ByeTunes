@@ -75,15 +75,23 @@ Inside there make sure you add:
 
 ## How to Use
 
-1.  **Pairing**:
+1. **LocalDevVPN**:
+    - Download LocalDevVPN from the App Store/Altstore PAL https://apps.apple.com/us/app/localdevvpn/id6755608044.
+    - Open it and tap Connect, you will need an active connection to import the pairing file inside the app.
+
+2.  **Pairing**:
     -   On first launch, you'll see an "Import Pairing File" screen.
     -   You need to get a `pairing file`.
-    -   Export this file from your computer and Airdrop/Save it to your iPhone.
+    -   Download idevice_pair refer to https://github.com/jkcoxson/idevice_pair .
+    -   Generate you `pairing file`.
+    -   Export it from your computer and Airdrop/Save it to your iPhone.
     -   Import it into ByeTunes.
-2.  **Add Music**:
+      
+3.  **Add Music**:
     -   Tap "Add Songs" and select files from your Files app.
     -   Hit "Inject to Device" and watch the magic happen.
-3.  **Ringtones**:
+      
+4.  **Ringtones**:
     -   Go to the Ringtones tab, add your file, and inject!
 
 ## Notes
