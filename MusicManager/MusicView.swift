@@ -228,8 +228,11 @@ struct MusicView: View {
                                         let source = UserDefaults.standard.string(forKey: "metadataSource")
                                         let isAPISource = source == "itunes" || source == "deezer"
                                         let isCustomSource = source == "custom"
+                                        let isLocalSource = source == "local" || source == nil // Default is local
                                          
-                                        let canEdit = isAPISource || isCustomSource
+                                        // Allow editing for API (search), Custom (manual), and Local (manual)
+                                        let canEdit = true // All modes now support some form of editing/matching
+
                                         
                                         SongRowView(
                                             song: song,
@@ -307,12 +310,17 @@ struct MusicView: View {
         }
         .sheet(item: $selectedSongForMatch) { item in
             if let index = songs.firstIndex(where: { $0.id == item.id }) {
-                if UserDefaults.standard.string(forKey: "metadataSource") == "custom" {
+                // Determine source
+                let source = UserDefaults.standard.string(forKey: "metadataSource") ?? "local"
+                
+                // If "local" or legacy "custom", show Manual Editor
+                if source == "local" || source == "custom" {
                     ManualMetadataEditor(song: $songs[index], isPresented: Binding(
                         get: { selectedSongForMatch != nil },
                         set: { if !$0 { selectedSongForMatch = nil } }
                     ))
                 } else {
+                    // iTunes / Deezer show the search sheet
                     iTunesSearchSheet(song: $songs[index], isPresented: Binding(
                         get: { selectedSongForMatch != nil },
                         set: { if !$0 { selectedSongForMatch = nil } }

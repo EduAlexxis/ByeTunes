@@ -215,7 +215,6 @@ struct SettingsView: View {
                                 Text("Local Files").tag("local")
                                 Text("iTunes API").tag("itunes")
                                 Text("Deezer API").tag("deezer")
-                                Text("Custom").tag("custom")
                             }
                             .pickerStyle(.menu)
                             .labelsHidden()
