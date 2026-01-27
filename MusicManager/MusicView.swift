@@ -227,8 +227,9 @@ struct MusicView: View {
                                         
                                         let source = UserDefaults.standard.string(forKey: "metadataSource")
                                         let isAPISource = source == "itunes" || source == "deezer"
+                                        let isCustomSource = source == "custom"
                                          
-                                        let canEdit = isAPISource
+                                        let canEdit = isAPISource || isCustomSource
                                         
                                         SongRowView(
                                             song: song,
@@ -306,10 +307,17 @@ struct MusicView: View {
         }
         .sheet(item: $selectedSongForMatch) { item in
             if let index = songs.firstIndex(where: { $0.id == item.id }) {
-                iTunesSearchSheet(song: $songs[index], isPresented: Binding(
-                    get: { selectedSongForMatch != nil },
-                    set: { if !$0 { selectedSongForMatch = nil } }
-                ))
+                if UserDefaults.standard.string(forKey: "metadataSource") == "custom" {
+                    ManualMetadataEditor(song: $songs[index], isPresented: Binding(
+                        get: { selectedSongForMatch != nil },
+                        set: { if !$0 { selectedSongForMatch = nil } }
+                    ))
+                } else {
+                    iTunesSearchSheet(song: $songs[index], isPresented: Binding(
+                        get: { selectedSongForMatch != nil },
+                        set: { if !$0 { selectedSongForMatch = nil } }
+                    ))
+                }
             } else {
                 VStack {
                     Text("Error: Song not found")
