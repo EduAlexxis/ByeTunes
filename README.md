@@ -65,7 +65,7 @@ You can find idevice and compile it from here: [https://github.com/jkcoxson/idev
     cargo build --release --package idevice-ffi --target aarch64-apple-ios
     ```
 Inside the idevice folder find: idevice.h and libidevice_ffi.a. Move them inside the project in Xcode, make sure you create **Bridging-Header.h**
-Inside your Xcode project, make sure you add:
+Inside your Xcode project and make sure you add:
 
  ```bash
     #import "idevice.h"
