@@ -888,13 +888,20 @@ class DeviceManager: ObservableObject {
             
             
             
-            
             progress("Finalizing...")
             Logger.shared.log("[DeviceManager] Step 6: Garbage Collection")
             
-            self.cleanUpOrphanedFiles(validFilenames: existingFiles) { deletedCount in
+            // CRITICAL FIX: Ensure BOTH existing files AND newly added files are protected from GC
+            let newFilenames = validSongs.map { $0.remoteFilename }
+            let allValidFiles = existingFiles.union(newFilenames)
+            
+            Logger.shared.log("[DeviceManager] GC Whitelist: \(allValidFiles.count) files (Old: \(existingFiles.count), New: \(newFilenames.count))")
+
+            self.cleanUpOrphanedFiles(validFilenames: allValidFiles) { deletedCount in
                 if deletedCount > 0 {
                    Logger.shared.log("[DeviceManager] Garbage Collection finished. Deleted \(deletedCount) orphaned files.")
+                } else {
+                   Logger.shared.log("[DeviceManager] Garbage Collection finished. No orphans found.")
                 }
                 
                 Logger.shared.log("[DeviceManager] Step 7: Sending sync notification")
