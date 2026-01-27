@@ -17,9 +17,9 @@ struct LogViewer: View {
                         .padding()
                         .id("bottom")
                 }
-                .onChange(of: logger.logs) {
+                .onChange(of: logger.logs, perform: { _ in
                     proxy.scrollTo("bottom", anchor: .bottom)
-                }
+                })
             }
             .navigationTitle("Debug Logs")
             .navigationBarTitleDisplayMode(.inline)

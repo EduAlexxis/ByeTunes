@@ -141,7 +141,7 @@ struct ManualMetadataEditor: View {
                 year = String(song.year)
                 artworkData = song.artworkData
             }
-            .onChange(of: artworkItem) { newItem in
+            .onChange(of: artworkItem, perform: { newItem in
                 Task {
                     if let data = try? await newItem?.loadTransferable(type: Data.self) {
                         await MainActor.run {
@@ -151,7 +151,7 @@ struct ManualMetadataEditor: View {
                         }
                     }
                 }
-            }
+            })
         }
     }
     
