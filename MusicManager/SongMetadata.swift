@@ -194,6 +194,10 @@ struct SongMetadata: Identifiable {
 
             
             if let val = try? await item.load(.stringValue), !val.isEmpty {
+                if keyString == "\u{00A9}gen" || keyString == "gnre" { 
+                     if genre == "Unknown Genre" { genre = val }
+                }
+                
                 if (combined.contains("TITLE") || combined.contains("NAM")) && title == filenameWithoutExt { title = val }
                 if (combined.contains("ARTIST") || combined.contains("PERFORMER")) && !combined.contains("ALBUMARTIST") && artist == "Unknown Artist" { artist = val }
                 if combined.contains("ALBUM") && !combined.contains("ALBUMARTIST") && album == "Unknown Album" { album = val }
@@ -225,6 +229,30 @@ struct SongMetadata: Identifiable {
                     if combined.contains("USLT") || combined.contains("LYRICS") || combined.contains("UNSYNC") || keyString == "\u{00A9}lyr" {
                          lyrics = SongMetadata.cleanLyrics(val)
                          print("[SongMetadata] Extracted and cleaned lyrics from key: \(combined)")
+                    }
+                }
+            }
+            
+            // Handle binary data for atoms like trkn/disk if string failed
+            if trackNumber == nil {
+                if keyString == "trkn" || combined.contains("TRKN") {
+                    if let data = try? await item.load(.dataValue), data.count >= 8 {
+                         let track = data.withUnsafeBytes { $0.load(fromByteOffset: 2, as: UInt16.self).bigEndian }
+                         let total = data.withUnsafeBytes { $0.load(fromByteOffset: 4, as: UInt16.self).bigEndian }
+                         if track > 0 { trackNumber = Int(track) }
+                         if total > 0 { trackCount = Int(total) }
+                         print("[SongMetadata] Extracted Track via Data: \(trackNumber ?? 0)/\(trackCount ?? 0)")
+                    }
+                }
+            }
+            if discNumber == nil {
+                if keyString == "disk" || combined.contains("DISK") {
+                    if let data = try? await item.load(.dataValue), data.count >= 6 {
+                         let disc = data.withUnsafeBytes { $0.load(fromByteOffset: 2, as: UInt16.self).bigEndian }
+                         let total = data.withUnsafeBytes { $0.load(fromByteOffset: 4, as: UInt16.self).bigEndian }
+                         if disc > 0 { discNumber = Int(disc) }
+                         if total > 0 { discCount = Int(total) }
+                         print("[SongMetadata] Extracted Disc via Data: \(discNumber ?? 0)/\(discCount ?? 0)")
                     }
                 }
             }
@@ -262,10 +290,23 @@ struct SongMetadata: Identifiable {
                      title = parts[1].trimmingCharacters(in: .whitespaces)
                      print("[SongMetadata] Parsed filename (Track - Title): \(filenameWithoutExt)")
                  } else {
-                     // Assume "Artist - Title"
-                     artist = parts[0].trimmingCharacters(in: .whitespaces)
-                     title = parts[1].trimmingCharacters(in: .whitespaces)
-                     print("[SongMetadata] Parsed filename (Artist - Title): \(filenameWithoutExt)")
+                     let p1 = parts[0].trimmingCharacters(in: .whitespaces)
+                     let p2 = parts[1].trimmingCharacters(in: .whitespaces)
+                     
+                     // Heuristic: If part 2 contains ", " or "feat" and part 1 doesn't, assume Title - Artist
+                     let p2LooksLikeArtist = p2.contains(",") || p2.lowercased().contains("feat")
+                     let p1LooksLikeArtist = p1.contains(",") || p1.lowercased().contains("feat")
+                     
+                     if p2LooksLikeArtist && !p1LooksLikeArtist {
+                         title = p1
+                         artist = p2
+                         print("[SongMetadata] Parsed filename (Title - Artist) [Heuristic]: \(filenameWithoutExt)")
+                     } else {
+                         // Default: Artist - Title
+                         artist = p1
+                         title = p2
+                         print("[SongMetadata] Parsed filename (Artist - Title): \(filenameWithoutExt)")
+                     }
                  }
              }
         }
