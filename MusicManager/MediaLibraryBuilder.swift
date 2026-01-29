@@ -725,87 +725,177 @@ class MediaLibraryBuilder {
                 let colorAnalysis = """
                 {"ColorAnalysis":{"1":{"primaryTextColorLight":"NO","secondaryTextColorLight":"NO","secondaryTextColor":"#FFFFFF","tertiaryTextColorLight":"NO","primaryTextColor":"#FFFFFF","tertiaryTextColor":"#CCCCCC","backgroundColorLight":"NO","backgroundColor":"#333333"}}}
                 """
-                try executeSQL(db, """
-                    INSERT OR REPLACE INTO artwork (
-                        artwork_token, artwork_source_type, relative_path, artwork_type, 
-                        interest_data, artwork_variant_type
-                    ) VALUES (
-                        '\(artToken)', 1, '\(relativePath)', 1,
-                        '\(colorAnalysis)', 0
-                    )
-                """)
+                let hasVariantColumn = columnExists(db: db, tableName: "artwork", columnName: "artwork_variant_type")
+                if hasVariantColumn {
+                    try executeSQL(db, """
+                        INSERT OR REPLACE INTO artwork (
+                            artwork_token, artwork_source_type, relative_path, artwork_type, 
+                            interest_data, artwork_variant_type
+                        ) VALUES (
+                            '\(artToken)', 1, '\(relativePath)', 1,
+                            '\(colorAnalysis)', 0
+                        )
+                    """)
+                } else {
+                    try executeSQL(db, """
+                        INSERT OR REPLACE INTO artwork (
+                            artwork_token, artwork_source_type, relative_path, artwork_type, 
+                            interest_data
+                        ) VALUES (
+                            '\(artToken)', 1, '\(relativePath)', 1,
+                            '\(colorAnalysis)'
+                        )
+                    """)
+                }
                 
                 
-                try executeSQL(db, """
-                    INSERT OR REPLACE INTO artwork_token (
-                        artwork_token, artwork_source_type, artwork_type, entity_pid, entity_type, artwork_variant_type
-                    ) VALUES (
-                        '\(artToken)', 1, 1, \(itemPid), 0, 0
-                    )
-                """)
+                let hasTokenVariantColumn = columnExists(db: db, tableName: "artwork_token", columnName: "artwork_variant_type")
                 
-                try executeSQL(db, """
-                    INSERT OR REPLACE INTO artwork_token (
-                        artwork_token, artwork_source_type, artwork_type, entity_pid, entity_type, artwork_variant_type
-                    ) VALUES (
-                        '\(artToken)', 1, 1, \(albumPid), 1, 0
-                    )
-                """)
+                if hasTokenVariantColumn {
+                    try executeSQL(db, """
+                        INSERT OR REPLACE INTO artwork_token (
+                            artwork_token, artwork_source_type, artwork_type, entity_pid, entity_type, artwork_variant_type
+                        ) VALUES (
+                            '\(artToken)', 1, 1, \(itemPid), 0, 0
+                        )
+                    """)
+                    
+                    try executeSQL(db, """
+                        INSERT OR REPLACE INTO artwork_token (
+                            artwork_token, artwork_source_type, artwork_type, entity_pid, entity_type, artwork_variant_type
+                        ) VALUES (
+                            '\(artToken)', 1, 1, \(albumPid), 1, 0
+                        )
+                    """)
+                    
+                    try executeSQL(db, """
+                        INSERT OR REPLACE INTO artwork_token (
+                            artwork_token, artwork_source_type, artwork_type, entity_pid, entity_type, artwork_variant_type
+                        ) VALUES (
+                            '\(artToken)', 1, 1, \(albumPid), 4, 0
+                        )
+                    """)
+                    
+                    try executeSQL(db, """
+                        INSERT OR REPLACE INTO artwork_token (
+                            artwork_token, artwork_source_type, artwork_type, entity_pid, entity_type, artwork_variant_type
+                        ) VALUES (
+                            '\(artToken)', 1, 1, \(artistPid), 2, 0
+                        )
+                    """)
+                } else {
+                    try executeSQL(db, """
+                        INSERT OR REPLACE INTO artwork_token (
+                            artwork_token, artwork_source_type, artwork_type, entity_pid, entity_type
+                        ) VALUES (
+                            '\(artToken)', 1, 1, \(itemPid), 0
+                        )
+                    """)
+                    
+                    try executeSQL(db, """
+                        INSERT OR REPLACE INTO artwork_token (
+                            artwork_token, artwork_source_type, artwork_type, entity_pid, entity_type
+                        ) VALUES (
+                            '\(artToken)', 1, 1, \(albumPid), 1
+                        )
+                    """)
+                    
+                    try executeSQL(db, """
+                        INSERT OR REPLACE INTO artwork_token (
+                            artwork_token, artwork_source_type, artwork_type, entity_pid, entity_type
+                        ) VALUES (
+                            '\(artToken)', 1, 1, \(albumPid), 4
+                        )
+                    """)
+                    
+                    try executeSQL(db, """
+                        INSERT OR REPLACE INTO artwork_token (
+                            artwork_token, artwork_source_type, artwork_type, entity_pid, entity_type
+                        ) VALUES (
+                            '\(artToken)', 1, 1, \(artistPid), 2
+                        )
+                    """)
+                }
                 
-                try executeSQL(db, """
-                    INSERT OR REPLACE INTO artwork_token (
-                        artwork_token, artwork_source_type, artwork_type, entity_pid, entity_type, artwork_variant_type
-                    ) VALUES (
-                        '\(artToken)', 1, 1, \(albumPid), 4, 0
-                    )
-                """)
-                try executeSQL(db, """
-                    INSERT OR REPLACE INTO artwork_token (
-                        artwork_token, artwork_source_type, artwork_type, entity_pid, entity_type, artwork_variant_type
-                    ) VALUES (
-                        '\(artToken)', 1, 1, \(artistPid), 2, 0
-                    )
-                """)
                 
                 
+                let hasBestTokenVariantColumn = columnExists(db: db, tableName: "best_artwork_token", columnName: "artwork_variant_type")
                 
-                try executeSQL(db, """
-                    INSERT OR REPLACE INTO best_artwork_token (
-                        entity_pid, entity_type, artwork_type, available_artwork_token, fetchable_artwork_token, 
-                        fetchable_artwork_source_type, artwork_variant_type
-                    ) VALUES (
-                        \(itemPid), 0, 1, '\(artToken)', '', 0, 0
-                    )
-                """)
+                if hasBestTokenVariantColumn {
+                    try executeSQL(db, """
+                        INSERT OR REPLACE INTO best_artwork_token (
+                            entity_pid, entity_type, artwork_type, available_artwork_token, fetchable_artwork_token, 
+                            fetchable_artwork_source_type, artwork_variant_type
+                        ) VALUES (
+                            \(itemPid), 0, 1, '\(artToken)', '', 0, 0
+                        )
+                    """)
+                    if !processedAlbumArtworkPids.contains(albumPid) {
+                        try executeSQL(db, """
+                            INSERT OR REPLACE INTO best_artwork_token (
+                                entity_pid, entity_type, artwork_type, available_artwork_token, fetchable_artwork_token, 
+                                fetchable_artwork_source_type, artwork_variant_type
+                            ) VALUES (
+                                \(albumPid), 1, 1, '\(artToken)', '', 0, 0
+                            )
+                        """)
+                        try executeSQL(db, """
+                            INSERT OR REPLACE INTO best_artwork_token (
+                                entity_pid, entity_type, artwork_type, available_artwork_token, fetchable_artwork_token, 
+                                fetchable_artwork_source_type, artwork_variant_type
+                            ) VALUES (
+                                \(albumPid), 4, 1, '\(artToken)', '', 0, 0
+                            )
+                        """)
+                    }
+                    try executeSQL(db, """
+                        INSERT OR REPLACE INTO best_artwork_token (
+                            entity_pid, entity_type, artwork_type, available_artwork_token, fetchable_artwork_token, 
+                            fetchable_artwork_source_type, artwork_variant_type
+                        ) VALUES (
+                            \(artistPid), 2, 1, '\(artToken)', '', 0, 0
+                        )
+                    """)
+                } else {
+                     try executeSQL(db, """
+                        INSERT OR REPLACE INTO best_artwork_token (
+                            entity_pid, entity_type, artwork_type, available_artwork_token, fetchable_artwork_token, 
+                            fetchable_artwork_source_type
+                        ) VALUES (
+                            \(itemPid), 0, 1, '\(artToken)', '', 0
+                        )
+                    """)
+                    if !processedAlbumArtworkPids.contains(albumPid) {
+                        try executeSQL(db, """
+                            INSERT OR REPLACE INTO best_artwork_token (
+                                entity_pid, entity_type, artwork_type, available_artwork_token, fetchable_artwork_token, 
+                                fetchable_artwork_source_type
+                            ) VALUES (
+                                \(albumPid), 1, 1, '\(artToken)', '', 0
+                            )
+                        """)
+                        try executeSQL(db, """
+                            INSERT OR REPLACE INTO best_artwork_token (
+                                entity_pid, entity_type, artwork_type, available_artwork_token, fetchable_artwork_token, 
+                                fetchable_artwork_source_type
+                            ) VALUES (
+                                \(albumPid), 4, 1, '\(artToken)', '', 0
+                            )
+                        """)
+                    }
+                    try executeSQL(db, """
+                        INSERT OR REPLACE INTO best_artwork_token (
+                            entity_pid, entity_type, artwork_type, available_artwork_token, fetchable_artwork_token, 
+                            fetchable_artwork_source_type
+                        ) VALUES (
+                            \(artistPid), 2, 1, '\(artToken)', '', 0
+                        )
+                    """)
+                }
+                
                 if !processedAlbumArtworkPids.contains(albumPid) {
-                    
-                    try executeSQL(db, """
-                        INSERT OR REPLACE INTO best_artwork_token (
-                            entity_pid, entity_type, artwork_type, available_artwork_token, fetchable_artwork_token, 
-                            fetchable_artwork_source_type, artwork_variant_type
-                        ) VALUES (
-                            \(albumPid), 1, 1, '\(artToken)', '', 0, 0
-                        )
-                    """)
-                    
-                    try executeSQL(db, """
-                        INSERT OR REPLACE INTO best_artwork_token (
-                            entity_pid, entity_type, artwork_type, available_artwork_token, fetchable_artwork_token, 
-                            fetchable_artwork_source_type, artwork_variant_type
-                        ) VALUES (
-                            \(albumPid), 4, 1, '\(artToken)', '', 0, 0
-                        )
-                    """)
                     processedAlbumArtworkPids.insert(albumPid)
                 }
-                try executeSQL(db, """
-                    INSERT OR REPLACE INTO best_artwork_token (
-                        entity_pid, entity_type, artwork_type, available_artwork_token, fetchable_artwork_token, 
-                        fetchable_artwork_source_type, artwork_variant_type
-                    ) VALUES (
-                        \(artistPid), 2, 1, '\(artToken)', '', 0, 0
-                    )
-                """)
             }
             
             trackNum += 1
@@ -1459,6 +1549,26 @@ class MediaLibraryBuilder {
         }
         
         return insertedPids
+    }
+    
+    private static func columnExists(db: OpaquePointer?, tableName: String, columnName: String) -> Bool {
+        var exists = false
+        var stmt: OpaquePointer?
+        let sql = "PRAGMA table_info(\(tableName))"
+        
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                if let namePtr = sqlite3_column_text(stmt, 1) {
+                    let name = String(cString: namePtr)
+                    if name == columnName {
+                        exists = true
+                        break
+                    }
+                }
+            }
+        }
+        sqlite3_finalize(stmt)
+        return exists
     }
 }
 
