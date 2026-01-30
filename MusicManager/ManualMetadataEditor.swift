@@ -10,6 +10,7 @@ struct ManualMetadataEditor: View {
     @State private var album: String = ""
     @State private var genre: String = ""
     @State private var year: String = ""
+    @State private var trackNumber: String = ""
     
     @State private var artworkItem: PhotosPickerItem?
     @State private var artworkData: Data?
@@ -17,7 +18,7 @@ struct ManualMetadataEditor: View {
     @FocusState private var focusedField: Field?
     
     enum Field {
-        case title, artist, album, genre, year
+        case title, artist, album, genre, year, trackNumber
     }
     
     var body: some View {
@@ -108,6 +109,17 @@ struct ManualMetadataEditor: View {
                             .focused($focusedField, equals: .year)
                     }
                     .padding(.vertical, 4)
+                    
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("Track Number")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(.secondary)
+                        TextField("Track #", text: $trackNumber)
+                            .keyboardType(.numberPad)
+                            .focused($focusedField, equals: .trackNumber)
+                    }
+                    .padding(.vertical, 4)
                 } header: {
                     Text("Details")
                 }
@@ -139,6 +151,9 @@ struct ManualMetadataEditor: View {
                 album = song.album
                 genre = song.genre
                 year = String(song.year)
+                if let track = song.trackNumber {
+                    trackNumber = String(track)
+                }
                 artworkData = song.artworkData
             }
             .onChange(of: artworkItem, perform: { newItem in
@@ -163,6 +178,11 @@ struct ManualMetadataEditor: View {
         updatedSong.genre = genre
         if let y = Int(year) {
              updatedSong.year = y
+        }
+        if let t = Int(trackNumber) {
+            updatedSong.trackNumber = t
+        } else {
+            updatedSong.trackNumber = nil
         }
         updatedSong.artworkData = artworkData
         
