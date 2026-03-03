@@ -32,10 +32,18 @@ struct SongRowView: View {
                     .font(.body)
                     .lineLimit(1)
                 
-                Text(song.artist)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
+                HStack {
+                    Text(song.artist)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                    
+                    if let lyrics = song.lyrics, !lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Image(systemName: "text.quote")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(Color(uiColor: .tertiaryLabel))
+                    }
+                }
             }
             
             Spacer()

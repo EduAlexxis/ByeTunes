@@ -12,9 +12,13 @@ struct ManualMetadataEditor: View {
     @State private var year: String = ""
     @State private var trackNumber: String = ""
     @State private var lyrics: String = ""
+    @State private var isExplicit: Bool = false
     
     @State private var artworkItem: PhotosPickerItem?
     @State private var artworkData: Data?
+    
+    @State private var showingSearchSheet = false
+    @State private var showingLyricsSearchSheet = false
     
     @FocusState private var focusedField: Field?
     
@@ -57,6 +61,26 @@ struct ManualMetadataEditor: View {
                     .padding(.vertical, 8)
                 } header: {
                     Text("Artwork")
+                }
+                
+                // Fetch Metadata button
+                Section {
+                    Button {
+                        showingSearchSheet = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "magnifyingglass")
+                                .foregroundColor(.accentColor)
+                            Text("Search Metadata")
+                                .foregroundColor(.accentColor)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundColor(Color(uiColor: .tertiaryLabel))
+                        }
+                    }
+                } footer: {
+                    Text("Search iTunes or Deezer to auto-fill metadata fields")
                 }
                 
                 Section {
@@ -121,6 +145,17 @@ struct ManualMetadataEditor: View {
                             .focused($focusedField, equals: .trackNumber)
                     }
                     .padding(.vertical, 4)
+                    
+                    Toggle(isOn: $isExplicit) {
+                        HStack(spacing: 8) {
+                            Text("🅴")
+                                .font(.caption.weight(.black))
+                                .foregroundColor(.red)
+                            Text("Explicit")
+                                .font(.body)
+                        }
+                    }
+                    .padding(.vertical, 4)
                 } header: {
                     Text("Details")
                 }
@@ -138,6 +173,14 @@ struct ManualMetadataEditor: View {
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                         }
+                        
+                        Button {
+                            showingLyricsSearchSheet = true
+                        } label: {
+                            Image(systemName: "text.magnifyingglass")
+                        }
+                        .disabled(title.isEmpty || artist.isEmpty)
+                        .padding(.leading, 8)
                     }
                 }
             }
@@ -162,17 +205,7 @@ struct ManualMetadataEditor: View {
                 }
             }
             .onAppear {
-                // Initialize state from song
-                title = song.title
-                artist = song.artist
-                album = song.album
-                genre = song.genre
-                year = String(song.year)
-                if let track = song.trackNumber {
-                    trackNumber = String(track)
-                }
-                lyrics = song.lyrics ?? ""
-                artworkData = song.artworkData
+                loadFieldsFromSong()
             }
             .onChange(of: artworkItem, perform: { newItem in
                 Task {
@@ -185,7 +218,35 @@ struct ManualMetadataEditor: View {
                     }
                 }
             })
+            .sheet(isPresented: $showingSearchSheet, onDismiss: {
+                // Refresh fields from the (possibly updated) song binding
+                loadFieldsFromSong()
+            }) {
+                iTunesSearchSheet(song: $song, isPresented: $showingSearchSheet)
+            }
+            .sheet(isPresented: $showingLyricsSearchSheet) {
+                LyricsSearchSheet(
+                    lyrics: $lyrics,
+                    isPresented: $showingLyricsSearchSheet,
+                    initialTitle: title,
+                    initialArtist: artist
+                )
+            }
         }
+    }
+    
+    private func loadFieldsFromSong() {
+        title = song.title
+        artist = song.artist
+        album = song.album
+        genre = song.genre
+        year = String(song.year)
+        if let track = song.trackNumber {
+            trackNumber = String(track)
+        }
+        lyrics = song.lyrics ?? ""
+        artworkData = song.artworkData
+        isExplicit = song.explicitRating > 0
     }
     
     private func saveChanges() {
@@ -204,6 +265,7 @@ struct ManualMetadataEditor: View {
         }
         updatedSong.lyrics = lyrics.isEmpty ? nil : lyrics
         updatedSong.artworkData = artworkData
+        updatedSong.explicitRating = isExplicit ? 1 : 0
         
         song = updatedSong
         isPresented = false

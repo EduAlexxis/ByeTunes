@@ -23,6 +23,18 @@ struct SongMetadata: Identifiable {
     var discCount: Int?
     var lyrics: String?
     
+    // M4A Apple Music Canonical IDs (iOS 26+)
+    var storeId: Int64 = 0
+    var storefrontId: Int64 = 0
+    var artistId: Int64 = 0
+    var composerId: Int64 = 0
+    var playlistId: Int64 = 0
+    var genreStoreId: Int64 = 0
+    var explicitRating: Int = 0
+    var copyright: String?
+    var xid: String?
+    var releaseDate: Int = 0
+    
     
     var artworkToken: String {
         return "local://\(remoteFilename)"
@@ -85,6 +97,19 @@ struct SongMetadata: Identifiable {
         var discCount: Int?
         var lyrics: String?
         
+        // M4A Apple Music fields
+        let isM4A = url.pathExtension.lowercased() == "m4a"
+        var storeId: Int64 = 0
+        var storefrontId: Int64 = 0
+        var artistId: Int64 = 0
+        var composerId: Int64 = 0
+        var playlistId: Int64 = 0
+        var genreStoreId: Int64 = 0
+        var explicitRating: Int = 0
+        var copyright: String?
+        var xid: String?
+        var releaseDate: Int = 0
+        
         
         
         let commonMetadata = try await asset.load(.commonMetadata)
@@ -142,7 +167,69 @@ struct SongMetadata: Identifiable {
             let identifier = item.identifier?.rawValue ?? ""
             let combined = "\(identifier)|\(keyString)".uppercased()
             
-            
+            // M4A Apple Music atom extraction
+            if isM4A {
+                let id = identifier
+                let isAppleKey = id.contains("rtng") || id.contains("geID") || id.contains("sfID") || id.contains("atID") || id.contains("cmID") || id.contains("plID") || id.contains("cnID") || id.contains("cprt") || id.contains("xid")
+                
+                if isAppleKey {
+                    if let val = try? await item.load(.stringValue), !val.isEmpty {
+                        if id.contains("rtng"), let v = Int(val) { explicitRating = v }
+                        if id.contains("geID"), let v = Int64(val) { genreStoreId = v }
+                        if id.contains("sfID"), let v = Int64(val) { storefrontId = v }
+                        if id.contains("atID"), let v = Int64(val) { artistId = v }
+                        if id.contains("cmID"), let v = Int64(val) { composerId = v }
+                        if id.contains("plID"), let v = Int64(val) { playlistId = v }
+                        if id.contains("cnID"), let v = Int64(val) { storeId = v }
+                        if id.contains("cprt") { copyright = val }
+                        if id.contains("xid") { xid = val }
+                    } else if let data = try? await item.load(.dataValue) {
+                        // Some Apple atoms store values as binary integers
+                        if id.contains("rtng") && data.count >= 1 { explicitRating = Int(data[0]) }
+                        if data.count >= 4 {
+                            let intVal = data.withUnsafeBytes { $0.load(as: UInt32.self).bigEndian }
+                            let val64 = Int64(intVal)
+                            if id.contains("geID") { genreStoreId = val64 }
+                            if id.contains("sfID") { storefrontId = val64 }
+                            if id.contains("atID") { artistId = val64 }
+                            if id.contains("cmID") { composerId = val64 }
+                            if id.contains("plID") { playlistId = val64 }
+                            if id.contains("cnID") { storeId = val64 }
+                        }
+                    }
+                }
+                
+                // ©day release date parsing for M4A (Apple Mac Epoch Time)
+                if keyString == "\u{00A9}day" {
+                    if let val = try? await item.load(.stringValue), !val.isEmpty {
+                        let df = DateFormatter()
+                        df.locale = Locale(identifier: "en_US_POSIX")
+                        
+                        // Try multiple date formats Apple M4A files can use
+                        let formats = [
+                            "yyyy-MM-dd'T'HH:mm:ssZ",
+                            "yyyy-MM-dd'T'HH:mm:ss",
+                            "yyyy-MM-dd",
+                            "yyyy"
+                        ]
+                        
+                        for fmt in formats {
+                            df.dateFormat = fmt
+                            if let date = df.date(from: val) {
+                                releaseDate = Int(date.timeIntervalSinceReferenceDate)
+                                print("[SongMetadata] M4A release date: \(val) -> epoch \(releaseDate)")
+                                break
+                            }
+                        }
+                        
+                        // Always extract year from ©day for M4A (overrides any wrong commonKeyCreationDate)
+                        if let extracted = extractYear(from: val) {
+                            year = extracted
+                            print("[SongMetadata] M4A year from ©day: \(year)")
+                        }
+                    }
+                }
+            }
             
             
             if trackNumber == nil {
@@ -313,6 +400,10 @@ struct SongMetadata: Identifiable {
         
         print("[SongMetadata] Final: title=\(title), artist=\(artist), album=\(album), track=\(trackNumber ?? 0)/\(trackCount ?? 0)")
         
+        if isM4A && (storeId > 0 || storefrontId > 0) {
+            print("[SongMetadata] M4A Apple IDs: storeId=\(storeId), sfID=\(storefrontId), atID=\(artistId), cmID=\(composerId), plID=\(playlistId), geID=\(genreStoreId), rtng=\(explicitRating)")
+        }
+        
         return SongMetadata(
             localURL: url,
             title: title,
@@ -329,7 +420,17 @@ struct SongMetadata: Identifiable {
             trackCount: trackCount,
             discNumber: discNumber,
             discCount: discCount,
-            lyrics: lyrics
+            lyrics: lyrics,
+            storeId: storeId,
+            storefrontId: storefrontId,
+            artistId: artistId,
+            composerId: composerId,
+            playlistId: playlistId,
+            genreStoreId: genreStoreId,
+            explicitRating: explicitRating,
+            copyright: copyright,
+            xid: xid,
+            releaseDate: releaseDate
         )
     }
     
@@ -362,7 +463,7 @@ struct SongMetadata: Identifiable {
         return nil
     }
     
-    static private func cleanLyrics(_ rawLyrics: String, title: String? = nil, artist: String? = nil) -> String {
+    static func cleanLyrics(_ rawLyrics: String, title: String? = nil, artist: String? = nil) -> String {
         // 1. Remove metadata headers like [ti:Title], [ar:Artist], etc.
         var cleaned = rawLyrics.replacingOccurrences(of: #"\[([a-z]+):.*\]"#, with: "", options: [.regularExpression, .caseInsensitive])
         
@@ -450,7 +551,35 @@ struct SongMetadata: Identifiable {
     }
 }
 
+struct LRCLIBResult: Codable, Identifiable {
+    let id: Int
+    let trackName: String?
+    let artistName: String?
+    let albumName: String?
+    let duration: Double?
+    let plainLyrics: String?
+    let syncedLyrics: String?
+}
 
+extension SongMetadata {
+    static func searchLyrics(query: String) async -> [LRCLIBResult] {
+        let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        guard let url = URL(string: "https://lrclib.net/api/search?q=\(encodedQuery)") else { return [] }
+        
+        var request = URLRequest(url: url)
+        request.setValue("MusicManager/1.0.1 (https://github.com/EduAlexxis/MusicManager)", forHTTPHeaderField: "User-Agent")
+        
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return [] }
+            let results = try JSONDecoder().decode([LRCLIBResult].self, from: data)
+            return results
+        } catch {
+            print("[SongMetadata] LRCLIB search failed: \(error)")
+            return []
+        }
+    }
+}
 
 struct iTunesSearchResult: Codable {
     let results: [iTunesSong]
