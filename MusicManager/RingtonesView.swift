@@ -334,10 +334,10 @@ struct RingtonesView: View {
         exportSession.outputURL = outputURL
         exportSession.outputFileType = .m4a
         
-        // iOS strictly rejects ringtones longer than 40 seconds.
-        // We crop everything to the first 40 seconds to guarantee it works.
+        // iOS strictly rejects ringtones longer than 40 seconds. We use 30 seconds
+        // as the standard iTunes limit to be perfectly safe.
         let durationSeconds = CMTimeGetSeconds(asset.duration)
-        let maxDuration = 40.0
+        let maxDuration = 30.0
         
         if durationSeconds > maxDuration {
             let start = CMTime(seconds: 0.0, preferredTimescale: 600)
