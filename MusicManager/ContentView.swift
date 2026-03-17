@@ -321,7 +321,6 @@ struct FloatingTabBar: View {
             ) {
                 selectedTab = downloadTabIndex
             }
-            
             TabBarButton(
                 icon: "gearshape.fill",
                 title: "Settings",
@@ -373,24 +372,27 @@ struct TabBarButton: View {
 struct DocumentPicker: UIViewControllerRepresentable {
     let types: [UTType]
     var allowsMultiple: Bool = false
+    var asCopy: Bool = true
     let completion: ([URL]?) -> Void
     
-    init(types: [UTType], allowsMultiple: Bool = false, completion: @escaping ([URL]?) -> Void) {
+    init(types: [UTType], allowsMultiple: Bool = false, asCopy: Bool = true, completion: @escaping ([URL]?) -> Void) {
         self.types = types
         self.allowsMultiple = allowsMultiple
+        self.asCopy = asCopy
         self.completion = completion
     }
     
-    init(types: [UTType], completion: @escaping (URL?) -> Void) {
+    init(types: [UTType], asCopy: Bool = true, completion: @escaping (URL?) -> Void) {
         self.types = types
         self.allowsMultiple = false
+        self.asCopy = asCopy
         self.completion = { urls in
             completion(urls?.first)
         }
     }
     
     func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: true)
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: asCopy)
         picker.delegate = context.coordinator
         picker.allowsMultipleSelection = allowsMultiple
         return picker

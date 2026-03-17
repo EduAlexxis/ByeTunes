@@ -39,41 +39,91 @@ private func fetchArtworkURLFromiTunes(title: String, artist: String) -> String?
 
 // MARK: - Database Version Support
 struct DatabaseVersion: Equatable {
+    enum SchemaFamily: Equatable {
+        case ios16
+        case ios17Or18
+        case ios26
+        case ios26Subscription
+    }
+
     var major: Int
     var isSubscription: Bool = false
-    
+
     init(major: Int, isSubscription: Bool = false) {
         self.major = major
         self.isSubscription = isSubscription
     }
-    
+
     static func ios(_ major: Int, isSub: Bool = false) -> DatabaseVersion {
         return DatabaseVersion(major: major, isSubscription: isSub)
     }
-    
+
     static var unknown: DatabaseVersion {
         return DatabaseVersion(major: 16)
     }
-    
+
+    var schemaFamily: SchemaFamily {
+        switch major {
+        case 26:
+            return isSubscription ? .ios26Subscription : .ios26
+        case 17, 18:
+            return .ios17Or18
+        case 16:
+            return .ios16
+        default:
+            return .ios16
+        }
+    }
+
     var userVersion: Int32 {
-        if major == 26 && isSubscription { return 2310000 }
-        if major == 26 || major == 16 { return 2320030 }
-        if major == 17 || major == 18 { return 2120020 }
-        return 2320030 
+        switch schemaFamily {
+        case .ios26Subscription:
+            return 2310000
+        case .ios26:
+            return 2320030
+        case .ios17Or18:
+            return 2120020
+        case .ios16:
+            return 2320030
+        }
     }
-    
+
     var hasEditorialNotes: Bool {
-        return major != 17 && major != 18
+        switch schemaFamily {
+        case .ios17Or18:
+            return false
+        case .ios16, .ios26, .ios26Subscription:
+            return true
+        }
     }
-    
+
     var hasCanonicalIDs: Bool {
-        return major == 26
+        switch schemaFamily {
+        case .ios26, .ios26Subscription:
+            return true
+        case .ios16, .ios17Or18:
+            return false
+        }
     }
-    
+
     var hasAlbumArtistSortColumns: Bool {
-        return major >= 17
+        switch schemaFamily {
+        case .ios16:
+            return false
+        case .ios17Or18, .ios26, .ios26Subscription:
+            return true
+        }
     }
-    
+
+    var hasAlbumStoreId: Bool {
+        switch schemaFamily {
+        case .ios16:
+            return false
+        case .ios17Or18, .ios26, .ios26Subscription:
+            return true
+        }
+    }
+
     var description: String {
         return "iOS \(major)\(isSubscription ? " (Subscription)" : "")"
     }
@@ -184,7 +234,8 @@ class MediaLibraryBuilder {
             existingAlbums: [String: (pid: Int64, year: Int)](),
             existingGenres: [:],
             existingAlbumArtists: [:],
-            version: version
+            version: version,
+            reorderSortMap: true
         )
         let songPids = insertResult.pids
         let artworkInfo = insertResult.artworkInfo
@@ -291,13 +342,14 @@ class MediaLibraryBuilder {
         
         
         let insertResult = try insertSongsWithExisting(
-            db: db, 
+            db: db,
             songs: newSongs,
             existingArtists: existingArtists,
             existingAlbums: existingAlbums,
             existingGenres: existingGenres,
             existingAlbumArtists: existingAlbumArtists,
-            version: version
+            version: version,
+            reorderSortMap: false
         )
         let songPids = insertResult.pids
         let artworkInfo = insertResult.artworkInfo
@@ -324,8 +376,7 @@ class MediaLibraryBuilder {
         Logger.shared.log("[MediaLibraryBuilder] Merged database saved: \(dbPath.path)")
         return (dbPath, existingFiles, artworkInfo, songPids)
     }
-    
-    
+
     static func getExistingFilenames(db: OpaquePointer?) -> Set<String> {
         var filenames = Set<String>()
         var stmt: OpaquePointer?
@@ -396,8 +447,7 @@ class MediaLibraryBuilder {
             
         }
     }
-    
-    
+
     private static func getExistingArtists(db: OpaquePointer?) -> [String: Int64] {
         var artists: [String: Int64] = [:]
         var stmt: OpaquePointer?
@@ -522,7 +572,8 @@ class MediaLibraryBuilder {
         existingAlbums: [String: (pid: Int64, year: Int)],
         existingGenres: [String: Int64],
         existingAlbumArtists: [String: Int64],
-        version: DatabaseVersion
+        version: DatabaseVersion,
+        reorderSortMap: Bool
     ) throws -> (pids: [Int64], artworkInfo: [ArtworkInfo]) {
         let now = Int(Date().timeIntervalSince1970)
         
@@ -1027,23 +1078,30 @@ class MediaLibraryBuilder {
         }
         
         
+        let hasAlbumStoreId = version.hasAlbumStoreId && columnExists(db: db, tableName: "album", columnName: "store_id")
         for (albumName, albumPid) in newAlbums {
             let escapedName = albumName.replacingOccurrences(of: "'", with: "''")
             let groupingKey = SongMetadata.generateGroupingKey(albumName)
             let groupingHex = groupingKey.map { String(format: "%02x", $0) }.joined()
             let storeId = albumStoreIds[albumName] ?? 0
-            
+
             if let song = songs.first(where: { $0.album == albumName }) {
-               
                 let effectiveName = song.albumArtist ?? song.artist
                 let aaPid = albumArtists[effectiveName] ?? 0
-                
+
                 let syncId = SongMetadata.generatePersistentId()
                 let repItem = albumRepItem[albumName] ?? 0
-                try executeSQL(db, """
-                    INSERT INTO album (album_pid, album, sort_album, album_artist_pid, grouping_key, album_year, keep_local, sync_id, representative_item_pid, store_id)
-                    VALUES (\(albumPid), '\(escapedName)', '\(escapedName)', \(aaPid), X'\(groupingHex)', \(song.year), 1, \(syncId), \(repItem), \(storeId))
-                """)
+                if hasAlbumStoreId {
+                    try executeSQL(db, """
+                        INSERT INTO album (album_pid, album, sort_album, album_artist_pid, grouping_key, album_year, keep_local, sync_id, representative_item_pid, store_id)
+                        VALUES (\(albumPid), '\(escapedName)', '\(escapedName)', \(aaPid), X'\(groupingHex)', \(song.year), 1, \(syncId), \(repItem), \(storeId))
+                    """)
+                } else {
+                    try executeSQL(db, """
+                        INSERT INTO album (album_pid, album, sort_album, album_artist_pid, grouping_key, album_year, keep_local, sync_id, representative_item_pid)
+                        VALUES (\(albumPid), '\(escapedName)', '\(escapedName)', \(aaPid), X'\(groupingHex)', \(song.year), 1, \(syncId), \(repItem))
+                    """)
+                }
             }
         }
         
@@ -1067,66 +1125,71 @@ class MediaLibraryBuilder {
         }
         
         
-        Logger.shared.log("[MediaLibraryBuilder] 🔧 SORT FIX: Reordering sort_map alphabetically...")
-        
-        try? executeSQL(db, """
-            UPDATE sort_map SET name_section = 
-                CASE 
-                    WHEN UNICODE(UPPER(SUBSTR(name, 1, 1))) BETWEEN 65 AND 90 
-                    THEN UNICODE(UPPER(SUBSTR(name, 1, 1))) - 65
-                    WHEN UNICODE(UPPER(SUBSTR(name, 1, 1))) BETWEEN 192 AND 197 THEN 0
-                    WHEN UNICODE(UPPER(SUBSTR(name, 1, 1))) = 199 THEN 2
-                    WHEN UNICODE(UPPER(SUBSTR(name, 1, 1))) BETWEEN 200 AND 203 THEN 4
-                    WHEN UNICODE(UPPER(SUBSTR(name, 1, 1))) BETWEEN 204 AND 207 THEN 8
-                    WHEN UNICODE(UPPER(SUBSTR(name, 1, 1))) = 209 THEN 13
-                    WHEN UNICODE(UPPER(SUBSTR(name, 1, 1))) BETWEEN 210 AND 214 THEN 14
-                    WHEN UNICODE(UPPER(SUBSTR(name, 1, 1))) BETWEEN 217 AND 220 THEN 20
-                    WHEN UNICODE(UPPER(SUBSTR(name, 1, 1))) = 221 THEN 24
-                    ELSE 26
-                END
-        """)
-        
-        try? executeSQL(db, "DROP TABLE IF EXISTS _sort_reorder")
-        try? executeSQL(db, """
-            CREATE TEMP TABLE _sort_reorder AS
-            SELECT name, name_order AS old_order, name_section,
-                   ROW_NUMBER() OVER (ORDER BY 
-                       CASE name_section WHEN 26 THEN -1 ELSE name_section END ASC,
-                       sort_key ASC
-                   ) AS new_order
-            FROM sort_map
-        """)
-        
-        try? executeSQL(db, """
-            UPDATE item SET
-                title_order = COALESCE((SELECT new_order FROM _sort_reorder WHERE old_order = item.title_order), title_order),
-                title_order_section = COALESCE((SELECT name_section FROM _sort_reorder WHERE old_order = item.title_order), title_order_section),
-                item_artist_order = COALESCE((SELECT new_order FROM _sort_reorder WHERE old_order = item.item_artist_order), item_artist_order),
-                item_artist_order_section = COALESCE((SELECT name_section FROM _sort_reorder WHERE old_order = item.item_artist_order), item_artist_order_section),
-                album_order = COALESCE((SELECT new_order FROM _sort_reorder WHERE old_order = item.album_order), album_order),
-                album_order_section = COALESCE((SELECT name_section FROM _sort_reorder WHERE old_order = item.album_order), album_order_section),
-                album_artist_order = COALESCE((SELECT new_order FROM _sort_reorder WHERE old_order = item.album_artist_order), album_artist_order),
-                album_artist_order_section = COALESCE((SELECT name_section FROM _sort_reorder WHERE old_order = item.album_artist_order), album_artist_order_section),
-                genre_order = COALESCE((SELECT new_order FROM _sort_reorder WHERE old_order = item.genre_order), genre_order),
-                genre_order_section = COALESCE((SELECT name_section FROM _sort_reorder WHERE old_order = item.genre_order), genre_order_section)
-        """)
-        
-        try? executeSQL(db, """
-            UPDATE sort_map SET name_order = (
-                SELECT new_order FROM _sort_reorder WHERE _sort_reorder.name = sort_map.name
-            )
-        """)
-        
-        try? executeSQL(db, """
-            UPDATE item_search SET
-                search_title = (SELECT title_order FROM item WHERE item.item_pid = item_search.item_pid),
-                search_album = (SELECT album_order FROM item WHERE item.item_pid = item_search.item_pid),
-                search_artist = (SELECT item_artist_order FROM item WHERE item.item_pid = item_search.item_pid),
-                search_album_artist = (SELECT album_artist_order FROM item WHERE item.item_pid = item_search.item_pid)
-        """)
-        
-        try? executeSQL(db, "DROP TABLE IF EXISTS _sort_reorder")
-        Logger.shared.log("[MediaLibraryBuilder] ✅ Sort reorder complete")
+        if reorderSortMap {
+            Logger.shared.log("[MediaLibraryBuilder] 🔧 SORT FIX: Reordering sort_map alphabetically...")
+
+            try? executeSQL(db, """
+                UPDATE sort_map SET name_section = 
+                    CASE 
+                        WHEN UNICODE(UPPER(SUBSTR(name, 1, 1))) BETWEEN 65 AND 90 
+                        THEN UNICODE(UPPER(SUBSTR(name, 1, 1))) - 65
+                        WHEN UNICODE(UPPER(SUBSTR(name, 1, 1))) BETWEEN 192 AND 197 THEN 0
+                        WHEN UNICODE(UPPER(SUBSTR(name, 1, 1))) = 199 THEN 2
+                        WHEN UNICODE(UPPER(SUBSTR(name, 1, 1))) BETWEEN 200 AND 203 THEN 4
+                        WHEN UNICODE(UPPER(SUBSTR(name, 1, 1))) BETWEEN 204 AND 207 THEN 8
+                        WHEN UNICODE(UPPER(SUBSTR(name, 1, 1))) = 209 THEN 13
+                        WHEN UNICODE(UPPER(SUBSTR(name, 1, 1))) BETWEEN 210 AND 214 THEN 14
+                        WHEN UNICODE(UPPER(SUBSTR(name, 1, 1))) BETWEEN 217 AND 220 THEN 20
+                        WHEN UNICODE(UPPER(SUBSTR(name, 1, 1))) = 221 THEN 24
+                        ELSE 26
+                    END
+            """)
+
+            try? executeSQL(db, "DROP TABLE IF EXISTS _sort_reorder")
+            try? executeSQL(db, """
+                CREATE TEMP TABLE _sort_reorder AS
+                SELECT name, name_order AS old_order, name_section,
+                       ROW_NUMBER() OVER (ORDER BY 
+                           CASE name_section WHEN 26 THEN -1 ELSE name_section END ASC,
+                           sort_key ASC
+                       ) AS new_order
+                FROM sort_map
+            """)
+
+            try? executeSQL(db, """
+                UPDATE item SET
+                    title_order = COALESCE((SELECT new_order FROM _sort_reorder WHERE old_order = item.title_order), title_order),
+                    title_order_section = COALESCE((SELECT name_section FROM _sort_reorder WHERE old_order = item.title_order), title_order_section),
+                    item_artist_order = COALESCE((SELECT new_order FROM _sort_reorder WHERE old_order = item.item_artist_order), item_artist_order),
+                    item_artist_order_section = COALESCE((SELECT name_section FROM _sort_reorder WHERE old_order = item.item_artist_order), item_artist_order_section),
+                    album_order = COALESCE((SELECT new_order FROM _sort_reorder WHERE old_order = item.album_order), album_order),
+                    album_order_section = COALESCE((SELECT name_section FROM _sort_reorder WHERE old_order = item.album_order), album_order_section),
+                    album_artist_order = COALESCE((SELECT new_order FROM _sort_reorder WHERE old_order = item.album_artist_order), album_artist_order),
+                    album_artist_order_section = COALESCE((SELECT name_section FROM _sort_reorder WHERE old_order = item.album_artist_order), album_artist_order_section),
+                    genre_order = COALESCE((SELECT new_order FROM _sort_reorder WHERE old_order = item.genre_order), genre_order),
+                    genre_order_section = COALESCE((SELECT name_section FROM _sort_reorder WHERE old_order = item.genre_order), genre_order_section)
+            """)
+
+            try? executeSQL(db, "UPDATE sort_map SET name_order = -(name_order + 1)")
+            try? executeSQL(db, """
+                UPDATE sort_map SET name_order = (
+                    SELECT new_order FROM _sort_reorder WHERE _sort_reorder.name = sort_map.name
+                )
+            """)
+
+            try? executeSQL(db, """
+                UPDATE item_search SET
+                    search_title = (SELECT title_order FROM item WHERE item.item_pid = item_search.item_pid),
+                    search_album = (SELECT album_order FROM item WHERE item.item_pid = item_search.item_pid),
+                    search_artist = (SELECT item_artist_order FROM item WHERE item.item_pid = item_search.item_pid),
+                    search_album_artist = (SELECT album_artist_order FROM item WHERE item.item_pid = item_search.item_pid)
+            """)
+
+            try? executeSQL(db, "DROP TABLE IF EXISTS _sort_reorder")
+            Logger.shared.log("[MediaLibraryBuilder] ✅ Sort reorder complete")
+        } else {
+            Logger.shared.log("[MediaLibraryBuilder] Sort reorder skipped for merge path")
+        }
         
         Logger.shared.log("[MediaLibraryBuilder] Fixing existing records without sync_id...")
         
@@ -1152,10 +1215,17 @@ class MediaLibraryBuilder {
     
     
     private static func createSchema(db: OpaquePointer?, version: DatabaseVersion) throws {
+        let albumSchema: String
+        if version.hasAlbumStoreId {
+            albumSchema = "CREATE TABLE album (album_pid INTEGER PRIMARY KEY, album TEXT NOT NULL DEFAULT '', sort_album TEXT, album_artist_pid INTEGER NOT NULL DEFAULT 0, representative_item_pid INTEGER NOT NULL DEFAULT 0, grouping_key BLOB, cloud_status INTEGER NOT NULL DEFAULT 0, user_rating INTEGER NOT NULL DEFAULT 0, liked_state INTEGER NOT NULL DEFAULT 0, all_compilations INTEGER NOT NULL DEFAULT 0, feed_url TEXT, season_number INTEGER NOT NULL DEFAULT 0, album_year INTEGER NOT NULL DEFAULT 0, keep_local INTEGER NOT NULL DEFAULT 0, keep_local_status INTEGER NOT NULL DEFAULT 0, keep_local_status_reason INTEGER NOT NULL DEFAULT 0, keep_local_constraints INTEGER NOT NULL DEFAULT 0, app_data BLOB, contains_classical_work INTEGER NOT NULL DEFAULT 0, date_played_local INTEGER NOT NULL DEFAULT 0, user_rating_is_derived INTEGER NOT NULL DEFAULT 0, sync_id INTEGER NOT NULL DEFAULT 0, classical_experience_available INTEGER NOT NULL DEFAULT 0, store_id INTEGER NOT NULL DEFAULT 0, cloud_library_id TEXT NOT NULL DEFAULT '', liked_state_changed_date INTEGER NOT NULL DEFAULT 0, editorial_notes TEXT NOT NULL DEFAULT '');"
+        } else {
+            albumSchema = "CREATE TABLE album (album_pid INTEGER PRIMARY KEY, album TEXT NOT NULL DEFAULT '', sort_album TEXT, album_artist_pid INTEGER NOT NULL DEFAULT 0, representative_item_pid INTEGER NOT NULL DEFAULT 0, grouping_key BLOB, cloud_status INTEGER NOT NULL DEFAULT 0, user_rating INTEGER NOT NULL DEFAULT 0, liked_state INTEGER NOT NULL DEFAULT 0, all_compilations INTEGER NOT NULL DEFAULT 0, feed_url TEXT, season_number INTEGER NOT NULL DEFAULT 0, album_year INTEGER NOT NULL DEFAULT 0, keep_local INTEGER NOT NULL DEFAULT 0, keep_local_status INTEGER NOT NULL DEFAULT 0, keep_local_status_reason INTEGER NOT NULL DEFAULT 0, keep_local_constraints INTEGER NOT NULL DEFAULT 0, app_data BLOB, contains_classical_work INTEGER NOT NULL DEFAULT 0, date_played_local INTEGER NOT NULL DEFAULT 0, user_rating_is_derived INTEGER NOT NULL DEFAULT 0, sync_id INTEGER NOT NULL DEFAULT 0, classical_experience_available INTEGER NOT NULL DEFAULT 0, cloud_library_id TEXT NOT NULL DEFAULT '', liked_state_changed_date INTEGER NOT NULL DEFAULT 0, editorial_notes TEXT NOT NULL DEFAULT '');"
+        }
+
         var schemaParts: [String] = [
             "CREATE TABLE _MLDatabaseProperties (key TEXT PRIMARY KEY, value TEXT);",
             "CREATE TABLE account (dsid INTEGER PRIMARY KEY, apple_id TEXT NOT NULL DEFAULT '', alt_dsid TEXT NOT NULL DEFAULT '');",
-            "CREATE TABLE album (album_pid INTEGER PRIMARY KEY, album TEXT NOT NULL DEFAULT '', sort_album TEXT, album_artist_pid INTEGER NOT NULL DEFAULT 0, representative_item_pid INTEGER NOT NULL DEFAULT 0, grouping_key BLOB, cloud_status INTEGER NOT NULL DEFAULT 0, user_rating INTEGER NOT NULL DEFAULT 0, liked_state INTEGER NOT NULL DEFAULT 0, all_compilations INTEGER NOT NULL DEFAULT 0, feed_url TEXT, season_number INTEGER NOT NULL DEFAULT 0, album_year INTEGER NOT NULL DEFAULT 0, keep_local INTEGER NOT NULL DEFAULT 0, keep_local_status INTEGER NOT NULL DEFAULT 0, keep_local_status_reason INTEGER NOT NULL DEFAULT 0, keep_local_constraints INTEGER NOT NULL DEFAULT 0, app_data BLOB, contains_classical_work INTEGER NOT NULL DEFAULT 0, date_played_local INTEGER NOT NULL DEFAULT 0, user_rating_is_derived INTEGER NOT NULL DEFAULT 0, sync_id INTEGER NOT NULL DEFAULT 0, classical_experience_available INTEGER NOT NULL DEFAULT 0, store_id INTEGER NOT NULL DEFAULT 0, cloud_library_id TEXT NOT NULL DEFAULT '', liked_state_changed_date INTEGER NOT NULL DEFAULT 0, editorial_notes TEXT NOT NULL DEFAULT '');"
+            albumSchema
         ]
         
         if version.hasAlbumArtistSortColumns {
@@ -1773,5 +1843,3 @@ class MediaLibraryBuilder {
         return exists
     }
 }
-
-

@@ -26,7 +26,7 @@ typealias IdeviceErrorCode = UnsafeMutablePointer<IdeviceFfiError>?
 let IdeviceSuccess: IdeviceErrorCode = nil
 
 
-private let BUILD_VERSION = "v1.0.3"
+private let BUILD_VERSION = "v2.0"
 
 class DeviceManager: ObservableObject {
     struct DatabaseSnapshotInfo: Identifiable {
@@ -1908,15 +1908,8 @@ class DeviceManager: ObservableObject {
                 if song.artist.isEmpty { song.artist = "Unknown Artist" }
                 if song.album.isEmpty { song.album = "Unknown Album" }
 
-                if isBatch {
-                    if song.title == "Broken Heart" {
-                        Logger.shared.log("[DeviceManager] Batch Mode: Skipping 'Broken Heart'")
-                        continue
-                    }
-                    if song.artist == "Unknown Artist" && song.album == "Unknown Album" {
-                        Logger.shared.log("[DeviceManager] Batch Mode: Skipping Unknown song '\(song.title)'")
-                        continue
-                    }
+                if isBatch && song.artist == "Unknown Artist" && song.album == "Unknown Album" {
+                    Logger.shared.log("[DeviceManager] Batch Mode: Preserving song with fallback metadata '\(song.title)'")
                 }
 
                 if song.artworkData == nil {
@@ -2235,9 +2228,7 @@ class DeviceManager: ObservableObject {
             }
         }
     }
-    
-    
-    
+
     
     
     func injectSongsAsPlaylist(songs: [SongMetadata], playlistName: String? = nil, targetPlaylistPid: Int64? = nil, progress: @escaping (String) -> Void, completion: @escaping (Bool) -> Void) {

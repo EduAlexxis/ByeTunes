@@ -6,6 +6,7 @@ struct SettingsView: View {
     @Binding var status: String
     
     @State private var showingPairingPicker = false
+    @State private var showingDownloadFolderPicker = false
     @State private var showingDeleteAlert = false
     
     @State private var showingLogViewer = false
@@ -145,7 +146,7 @@ struct SettingsView: View {
                             
                             Spacer()
                             
-                            Text("1.0.3")
+                            Text("2.0")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                         }
@@ -294,7 +295,7 @@ struct SettingsView: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("Fetch Lyrics")
                                         .font(.body)
-                                    Text("Automatically fetch lyrics from LRCLIB")
+                                    Text("Automatically fetch lyrics from LRCLIB, then Musixmatch, then NetEase")
                                         .font(.caption)
                                         .foregroundColor(.secondary)
                                 }
@@ -371,6 +372,39 @@ struct SettingsView: View {
                         .toggleStyle(SwitchToggleStyle(tint: .accentColor))
                         .padding(.vertical, 10)
                         .padding(.horizontal, 16)
+
+                        if keepDownloadedSongs {
+                            Divider().padding(.leading, 56)
+
+                            Button {
+                                showingDownloadFolderPicker = true
+                            } label: {
+                                HStack {
+                                    Image(systemName: "folder")
+                                        .font(.body)
+                                        .foregroundColor(.primary)
+                                        .frame(width: 28)
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Download Folder")
+                                            .font(.body)
+                                            .foregroundColor(.primary)
+                                        Text(downloadFolderSubtitle)
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                            .lineLimit(2)
+                                    }
+
+                                    Spacer()
+
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption)
+                                        .foregroundColor(Color(.systemGray3))
+                                }
+                                .padding(.vertical, 14)
+                                .padding(.horizontal, 16)
+                            }
+                        }
                     }
                     .background(Color(.systemBackground))
                     .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -829,6 +863,11 @@ struct SettingsView: View {
                 handlePairingImport(url: url)
             }
         }
+        .sheet(isPresented: $showingDownloadFolderPicker) {
+            DocumentPicker(types: [.folder], asCopy: false) { url in
+                handleDownloadFolderSelection(url: url)
+            }
+        }
         .sheet(isPresented: $showingLogViewer) {
             LogViewer()
         }
@@ -1044,6 +1083,33 @@ struct SettingsView: View {
             manager.startHeartbeat()
         } catch {
             status = "Import failed"
+        }
+    }
+
+    private var downloadFolderSubtitle: String {
+        let directory = SongMetadata.persistentDownloadsDirectory()
+        if SongMetadata.customPersistentDownloadsDirectory() != nil {
+            return directory.lastPathComponent
+        }
+        return "App Folder"
+    }
+
+    private func handleDownloadFolderSelection(url: URL?) {
+        guard let url else { return }
+
+        let needsSecurityScope = url.startAccessingSecurityScopedResource()
+        defer {
+            if needsSecurityScope {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        do {
+            let bookmark = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+            UserDefaults.standard.set(bookmark, forKey: "downloadedSongsFolderBookmark")
+            showToastMessage(title: "Download Folder Updated", icon: "folder.badge.checkmark")
+        } catch {
+            showToastMessage(title: "Folder Selection Failed", icon: "exclamationmark.triangle.fill")
         }
     }
 }

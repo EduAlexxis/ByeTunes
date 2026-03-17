@@ -613,7 +613,7 @@ struct MusicView: View {
                 }
                 
                 if fetchLyrics && (song.lyrics == nil || song.lyrics?.isEmpty == true) {
-                    if let fetchedLyrics = await SongMetadata.fetchLyricsFromLRCLIB(
+                    if let fetchedLyrics = await SongMetadata.fetchLyrics(
                         title: song.title,
                         artist: song.artist,
                         album: song.album,

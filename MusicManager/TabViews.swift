@@ -102,7 +102,6 @@ struct ModernTabView: View {
                     Label("Download", systemImage: "arrow.down.circle")
                 }
                 .tag(downloadTabIndex)
-            
             SettingsView(manager: manager, status: $status)
             .tabItem {
                 Label("Settings", systemImage: "gearshape.fill")

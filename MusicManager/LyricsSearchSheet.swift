@@ -7,9 +7,11 @@ struct LyricsSearchSheet: View {
     let songArtist: String
     
     @State private var searchQuery: String = ""
-    @State private var results: [LRCLIBResult] = []
+    @State private var results: [LyricsSearchResult] = []
     @State private var isLoading = false
+    @State private var isResolvingLyrics = false
     @State private var errorMessage: String?
+    @State private var lyricsService: LyricsSearchService = .lrclib
     
     var body: some View {
         ZStack {
@@ -21,7 +23,7 @@ struct LyricsSearchSheet: View {
                     Text("Select Lyrics")
                         .font(.system(size: 24, weight: .bold))
                     
-                    Text("LRCLIB")
+                    Text(lyricsService.displayName)
                         .font(.caption2.weight(.bold))
                         .foregroundColor(.accentColor)
                         .padding(.horizontal, 8)
@@ -44,6 +46,23 @@ struct LyricsSearchSheet: View {
                 }
                 .padding([.top, .horizontal], 20)
                 .padding(.bottom, 10)
+
+                HStack {
+                    Text("Service")
+                        .font(.body)
+
+                    Spacer()
+
+                    Picker("Lyrics Service", selection: $lyricsService) {
+                        ForEach(LyricsSearchService.allCases) { service in
+                            Text(service.displayName).tag(service)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                }
+                .padding(.vertical, 14)
+                .padding(.horizontal, 16)
                 
                 HStack {
                     Image(systemName: "magnifyingglass")
@@ -70,12 +89,12 @@ struct LyricsSearchSheet: View {
                 .padding(.bottom, 16)
                 .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
                 
-                if isLoading {
+                if isLoading || isResolvingLyrics {
                     Spacer()
                     VStack(spacing: 20) {
                         ProgressView()
                             .scaleEffect(1.2)
-                        Text("Searching LRCLIB...")
+                        Text(isResolvingLyrics ? "Loading lyrics from \(lyricsService.displayName)..." : "Searching \(lyricsService.displayName)...")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                     }
@@ -111,9 +130,7 @@ struct LyricsSearchSheet: View {
                         LazyVStack(spacing: 0) {
                             ForEach(Array(results.enumerated()), id: \.element.id) { index, result in
                                 Button {
-                                    let raw = result.syncedLyrics ?? result.plainLyrics ?? ""
-                                    lyrics = SongMetadata.cleanLyrics(raw, title: songTitle, artist: songArtist)
-                                    isPresented = false
+                                    applyLyricsResult(result)
                                 } label: {
                                     LyricsRow(result: result)
                                 }
@@ -135,25 +152,58 @@ struct LyricsSearchSheet: View {
                 performSearch()
             }
         }
+        .onChange(of: lyricsService) { _ in
+            results = []
+            errorMessage = nil
+            if !searchQuery.isEmpty {
+                performSearch()
+            }
+        }
     }
     
     private func performSearch() {
         guard !searchQuery.isEmpty else { return }
         isLoading = true
         errorMessage = nil
+        results = []
         
         Task {
-            let searchResults = await SongMetadata.searchLyrics(query: searchQuery)
+            let service = lyricsService
+            let searchResults = await SongMetadata.searchLyrics(query: searchQuery, service: service)
             await MainActor.run {
-                self.results = searchResults
+                if self.lyricsService == service {
+                    self.results = searchResults
+                }
                 self.isLoading = false
+                if searchResults.isEmpty {
+                    self.errorMessage = nil
+                }
+            }
+        }
+    }
+
+    private func applyLyricsResult(_ result: LyricsSearchResult) {
+        isResolvingLyrics = true
+        errorMessage = nil
+
+        Task {
+            let fetchedLyrics = await SongMetadata.resolveLyrics(for: result, songTitle: songTitle, songArtist: songArtist)
+            await MainActor.run {
+                self.isResolvingLyrics = false
+                if let fetchedLyrics, !fetchedLyrics.isEmpty {
+                    Logger.shared.log("[LyricsSearch] Fetched lyrics from \(result.service.displayName)")
+                    self.lyrics = fetchedLyrics
+                    self.isPresented = false
+                } else {
+                    self.errorMessage = "Couldn’t load lyrics from \(result.service.displayName). Try another result or service."
+                }
             }
         }
     }
 }
 
 struct LyricsRow: View {
-    let result: LRCLIBResult
+    let result: LyricsSearchResult
     
     var body: some View {
         HStack(spacing: 14) {
@@ -167,17 +217,17 @@ struct LyricsRow: View {
             .cornerRadius(10)
             
             VStack(alignment: .leading, spacing: 3) {
-                Text(result.trackName ?? "Unknown Title")
+                Text(result.title)
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundColor(.primary)
                     .lineLimit(1)
                 
-                Text(result.artistName ?? "Unknown Artist")
+                Text(result.artist)
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
                 
-                if let album = result.albumName, !album.isEmpty, album.lowercased() != "null" {
+                if let album = result.album, !album.isEmpty, album.lowercased() != "null" {
                     Text(album)
                         .font(.caption)
                         .foregroundColor(.secondary.opacity(0.7))
@@ -187,7 +237,7 @@ struct LyricsRow: View {
             
             Spacer()
             
-            if result.syncedLyrics != nil {
+            if result.hasSyncedLyrics {
                 Image(systemName: "timer")
                     .font(.caption2)
                     .foregroundColor(.accentColor.opacity(0.6))

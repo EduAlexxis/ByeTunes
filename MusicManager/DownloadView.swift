@@ -1060,7 +1060,7 @@ final class DownloadViewModel: ObservableObject {
         }
 
         if song.lyrics == nil || song.lyrics?.isEmpty == true {
-            if let fetchedLyrics = await SongMetadata.fetchLyricsFromLRCLIB(
+            if let fetchedLyrics = await SongMetadata.fetchLyrics(
                 title: song.title,
                 artist: song.artist,
                 album: song.album,
@@ -1092,12 +1092,16 @@ final class DownloadViewModel: ObservableObject {
         log("Using primary source URL (\(resolvedSource.platform.displayName)): \(resolvedSource.url)")
 
         let primaryCandidates = try primaryCandidates(for: resolvedSource)
-        if let outcome = try await executeCandidatesUntilSuccess(
-            primaryCandidates,
-            suggestedName: "\(track.artistLine) - \(track.name)",
-            fallbackExtension: "flac"
-        ) {
-            return outcome
+        do {
+            if let outcome = try await executeCandidatesUntilSuccess(
+                primaryCandidates,
+                suggestedName: "\(track.artistLine) - \(track.name)",
+                fallbackExtension: "flac"
+            ) {
+                return outcome
+            }
+        } catch {
+            log("Primary backend chain exhausted: \(error.localizedDescription)")
         }
 
         log("Yoinkify failed. Preparing Tidal fallback backends.")
@@ -1274,8 +1278,41 @@ final class DownloadViewModel: ObservableObject {
                     return url
                 }
             }
+            if let manifest = dataObj["manifest"] as? String,
+               let resolved = decodeManifestMediaURL(manifest) {
+                return resolved
+            }
+        }
+        if let manifest = obj["manifest"] as? String,
+           let resolved = decodeManifestMediaURL(manifest) {
+            return resolved
         }
         return nil
+    }
+
+    private func decodeManifestMediaURL(_ manifest: String) -> URL? {
+        let candidates = [manifest, manifest.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")]
+        for candidate in candidates {
+            let padded = padBase64(candidate)
+            guard let data = Data(base64Encoded: padded) else { continue }
+            guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+            if let urls = obj["urls"] as? [String], let first = urls.first, let url = URL(string: first) {
+                return url
+            }
+            let keys = ["url", "manifest_url", "media_url"]
+            for key in keys {
+                if let value = obj[key] as? String, let url = URL(string: value) {
+                    return url
+                }
+            }
+        }
+        return nil
+    }
+
+    private func padBase64(_ value: String) -> String {
+        let remainder = value.count % 4
+        guard remainder != 0 else { return value }
+        return value + String(repeating: "=", count: 4 - remainder)
     }
 
     private func extractRedirectURL(from data: Data) -> URL? {
@@ -1305,21 +1342,28 @@ final class DownloadViewModel: ObservableObject {
         let directory: URL
 
         if keepDownloadedSongs {
-            directory = URL.documentsDirectory.appendingPathComponent("Downloaded Songs", isDirectory: true)
+            directory = SongMetadata.persistentDownloadsDirectory()
         } else {
             directory = FileManager.default.temporaryDirectory.appendingPathComponent("DownloadCache", isDirectory: true)
         }
 
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-
-        var url = directory.appendingPathComponent("\(base).\(fileExtension)")
-        var suffix = 1
-        while FileManager.default.fileExists(atPath: url.path) {
-            url = directory.appendingPathComponent("\(base)-\(suffix).\(fileExtension)")
-            suffix += 1
+        let needsSecurityScope = keepDownloadedSongs && directory.startAccessingSecurityScopedResource()
+        defer {
+            if needsSecurityScope {
+                directory.stopAccessingSecurityScopedResource()
+            }
         }
 
         do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+            var url = directory.appendingPathComponent("\(base).\(fileExtension)")
+            var suffix = 1
+            while FileManager.default.fileExists(atPath: url.path) {
+                url = directory.appendingPathComponent("\(base)-\(suffix).\(fileExtension)")
+                suffix += 1
+            }
+
             try data.write(to: url, options: .atomic)
             return url
         } catch {
@@ -1332,7 +1376,14 @@ final class DownloadViewModel: ObservableObject {
             return song
         }
 
-        let directory = URL.documentsDirectory.appendingPathComponent("Downloaded Songs", isDirectory: true)
+        let directory = SongMetadata.persistentDownloadsDirectory()
+        let needsSecurityScope = directory.startAccessingSecurityScopedResource()
+        defer {
+            if needsSecurityScope {
+                directory.stopAccessingSecurityScopedResource()
+            }
+        }
+
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         } catch {
