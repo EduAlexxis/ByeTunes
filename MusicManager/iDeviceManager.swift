@@ -2928,6 +2928,68 @@ class DeviceManager: ObservableObject {
         }
     }
 
+    private func reconnectAfcClient(_ afc: inout AfcClientHandle?, reason: String) -> Bool {
+        if let currentAfc = afc {
+            afc_client_free(currentAfc)
+            afc = nil
+        }
+
+        Logger.shared.log("[DeviceManager] AFC transport lost, reconnecting (\(reason))...")
+
+        let semaphore = DispatchSemaphore(value: 0)
+        var reconnected = false
+
+        startHeartbeat { success in
+            reconnected = success
+            semaphore.signal()
+        }
+        semaphore.wait()
+
+        guard reconnected else {
+            Logger.shared.log("[DeviceManager] ERROR: Failed to rebuild transport during AFC reconnect")
+            return false
+        }
+
+        let connectErr = connectAfcClient(&afc)
+        guard connectErr == IdeviceSuccess, afc != nil else {
+            Logger.shared.log("[DeviceManager] ERROR: Failed to reconnect AFC client")
+            return false
+        }
+
+        Logger.shared.log("[DeviceManager] AFC client reconnected successfully")
+        return true
+    }
+
+    private func uploadFileToDeviceWithReconnect(localURL: URL, remotePath: String, afc: inout AfcClientHandle?, verify: Bool = true, maxAttempts: Int = 2) -> Bool {
+        for attempt in 1...maxAttempts {
+            if uploadFileToDevice(localURL: localURL, remotePath: remotePath, afc: afc, verify: verify) {
+                return true
+            }
+
+            guard requiresRPPairingTunnel, attempt < maxAttempts else { break }
+
+            Logger.shared.log("[DeviceManager] Retrying file upload after AFC reconnect (\(attempt)/\(maxAttempts - 1)): \(remotePath)")
+            guard reconnectAfcClient(&afc, reason: remotePath) else { break }
+        }
+
+        return false
+    }
+
+    private func uploadDataToDeviceWithReconnect(_ data: Data, remotePath: String, afc: inout AfcClientHandle?, verify: Bool = true, maxAttempts: Int = 2) -> Bool {
+        for attempt in 1...maxAttempts {
+            if uploadDataToDevice(data, remotePath: remotePath, afc: afc, verify: verify) {
+                return true
+            }
+
+            guard requiresRPPairingTunnel, attempt < maxAttempts else { break }
+
+            Logger.shared.log("[DeviceManager] Retrying data upload after AFC reconnect (\(attempt)/\(maxAttempts - 1)): \(remotePath)")
+            guard reconnectAfcClient(&afc, reason: remotePath) else { break }
+        }
+
+        return false
+    }
+
     private func uploadFileToDevice(localURL: URL, remotePath: String, afc: AfcClientHandle?, verify: Bool = true) -> Bool {
         let needsSecurityScope = localURL.startAccessingSecurityScopedResource()
         defer {
@@ -3226,7 +3288,7 @@ class DeviceManager: ObservableObject {
                 progress("Uploading \(index + 1)/\(validSongs.count): \(song.title)")
 
                 let remotePath = "\(musicDir)/\(song.remoteFilename)"
-                let uploadSuccess = self.uploadFileToDevice(localURL: song.localURL, remotePath: remotePath, afc: afc, verify: false)
+                let uploadSuccess = self.uploadFileToDeviceWithReconnect(localURL: song.localURL, remotePath: remotePath, afc: &afc, verify: false)
                 
                 if !uploadSuccess {
                     Logger.shared.log("[DeviceManager] ERROR: Failed to upload \(song.title)")
@@ -3252,7 +3314,7 @@ class DeviceManager: ObservableObject {
                     afc_make_directory(afc, "/iTunes_Control/iTunes/Artwork/Originals")
                     afc_make_directory(afc, artworkDir)
 
-	                    if self.uploadDataToDevice(artworkData, remotePath: artworkPath, afc: afc, verify: false) {
+	                    if self.uploadDataToDeviceWithReconnect(artworkData, remotePath: artworkPath, afc: &afc, verify: false) {
 	                        Logger.shared.log("[DeviceManager] Artwork uploaded to: \(artworkPath)")
 	                    } else {
 	                        Logger.shared.log("[DeviceManager] WARNING: Artwork upload failed for: \(song.title)")
@@ -3275,7 +3337,7 @@ class DeviceManager: ObservableObject {
             let finalDBPath = "/iTunes_Control/iTunes/MediaLibrary.sqlitedb"
             let shmPath = "/iTunes_Control/iTunes/MediaLibrary.sqlitedb-shm"
             let walPath = "/iTunes_Control/iTunes/MediaLibrary.sqlitedb-wal"
-            let dbUploadSuccess = self.uploadFileToDevice(localURL: dbURL, remotePath: tempDBPath, afc: afc)
+            let dbUploadSuccess = self.uploadFileToDeviceWithReconnect(localURL: dbURL, remotePath: tempDBPath, afc: &afc)
             
             if !dbUploadSuccess {
                 Logger.shared.log("[DeviceManager] ERROR: Failed to upload temp database")
