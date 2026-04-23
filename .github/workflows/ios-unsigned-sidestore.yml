@@ -145,10 +145,8 @@ jobs:
             ls -la "$DEST_DIR"/libidevice_ffi.a "$DEST_DIR"/idevice.h
           fi
 
-          # Generate bridging header
-          cat > "$GITHUB_WORKSPACE/$APP_DIR/Bridging-Header.h" <<'EOF'
-#import "idevice.h"
-EOF
+          # Generate bridging header (avoid heredoc to prevent YAML block-scalar issues)
+          printf '%s\n' '#import "idevice.h"' > "$GITHUB_WORKSPACE/$APP_DIR/Bridging-Header.h"
 
           echo "Bridging-Header.h contents:"
           cat "$GITHUB_WORKSPACE/$APP_DIR/Bridging-Header.h"
