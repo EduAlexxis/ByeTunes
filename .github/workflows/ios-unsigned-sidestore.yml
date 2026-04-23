@@ -6,7 +6,19 @@ on:
       - main
       - master
   pull_request:
+    branches:
+      - main
+      - master
   workflow_dispatch:
+    inputs:
+      configuration:
+        description: 'Build configuration'
+        required: true
+        default: 'Release'
+        type: choice
+        options:
+          - Release
+          - Debug
   release:
     types:
       - published
@@ -19,19 +31,23 @@ env:
   PROJECT_FILE: MusicManager.xcodeproj
   SCHEME: MusicManager
   APP_DIR: MusicManager
-  CONFIGURATION: Release
+  CONFIGURATION: ${{ github.event.inputs.configuration || 'Release' }}
   CI: true
 
 jobs:
   build-unsigned-ipa:
     name: Build unsigned device IPA
-    runs-on: macos-15
-    timeout-minutes: 30
+    runs-on: macos-latest
+    timeout-minutes: 45
 
     permissions:
       contents: write
       actions: read
-      checks: write
+
+    outputs:
+      build-status: ${{ steps.build.outcome }}
+      ipa-size: ${{ steps.package.outputs.ipa-size }}
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
 
     steps:
       - name: Check out repository
@@ -46,22 +62,23 @@ jobs:
           rm -f "$APP_DIR"/Bridging-Header.h
           rm -f "$APP_DIR"/idevice.h
           rm -f "$APP_DIR"/libidevice_ffi.a
+          # Restore tracked Bridging-Header.h if it exists in repo
           git checkout -- "$APP_DIR"/Bridging-Header.h 2>/dev/null || true
 
       - name: Select Xcode
         id: setup-xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '16.1'
+          xcode-version: latest-stable
 
       - name: Verify environment
         shell: bash
         run: |
+          echo "=== Runner Environment ==="
           echo "macOS: $(sw_vers -productVersion)"
-          echo "Arch: $(uname -m)"
-          xcode-select -p
-          xcodebuild -version
-          xcodebuild -showsdks | grep -E 'iphoneos|iOS'
+          echo "Arch:  $(uname -m)"
+          echo "Xcode: $(xcodebuild -version | head -1)"
+          xcodebuild -showsdks | grep -E 'iphoneos|iOS' || true
 
       - name: Install Rust iOS target
         id: rust-toolchain
@@ -73,8 +90,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: byetunes-idevice-ffi-v1
-          workspaces: |
-            ${{ runner.temp }}/idevice
+          cache-targets: true
 
       - name: Build idevice-ffi static library
         id: build-idevice
@@ -84,19 +100,33 @@ jobs:
 
           DEST_DIR="$GITHUB_WORKSPACE/$APP_DIR"
 
+          # Check if artifacts already exist (cached by rust-cache or previous step)
           if [[ -f "$DEST_DIR/idevice.h" && -f "$DEST_DIR/libidevice_ffi.a" ]]; then
-            echo "Using cached idevice artifacts"
+            echo "Using existing idevice artifacts"
             ls -la "$DEST_DIR"/idevice.h "$DEST_DIR"/libidevice_ffi.a
           else
             echo "Building idevice-ffi from source..."
-            rm -rf "$RUNNER_TEMP/idevice"
-            git clone --depth 1 https://github.com/jkcoxson/idevice "$RUNNER_TEMP/idevice"
+            WORK_DIR="$RUNNER_TEMP/idevice"
+            rm -rf "$WORK_DIR"
+            mkdir -p "$WORK_DIR"
 
-            cd "$RUNNER_TEMP/idevice"
+            # Clone with retry logic
+            for attempt in 1 2 3; do
+              echo "Clone attempt $attempt..."
+              if git clone --depth 1 https://github.com/jkcoxson/idevice "$WORK_DIR"; then
+                break
+              fi
+              echo "Clone failed, waiting 5s..."
+              sleep 5
+              rm -rf "$WORK_DIR"
+              mkdir -p "$WORK_DIR"
+            done
+
+            cd "$WORK_DIR"
             export IPHONEOS_DEPLOYMENT_TARGET=16.0
             export RUSTFLAGS="-C opt-level=3 -C lto=fat"
 
-            cargo build --release --package idevice-ffi --target aarch64-apple-ios 2>&1 | tail -20
+            cargo build --release --package idevice-ffi --target aarch64-apple-ios 2>&1 | tail -30
 
             HEADER_PATH="$(find . -name 'idevice.h' -type f | head -n 1)"
             LIB_PATH="$(find target -path '*aarch64-apple-ios/release/libidevice_ffi.a' -type f | head -n 1)"
@@ -104,6 +134,7 @@ jobs:
             if [[ -z "$HEADER_PATH" || -z "$LIB_PATH" ]]; then
               echo "ERROR: idevice build artifacts not found"
               find target -name "*.a" -type f 2>/dev/null || true
+              find . -name "*.h" -type f 2>/dev/null || true
               exit 1
             fi
 
@@ -114,10 +145,12 @@ jobs:
             ls -la "$DEST_DIR"/libidevice_ffi.a "$DEST_DIR"/idevice.h
           fi
 
+          # Generate bridging header
           cat > "$GITHUB_WORKSPACE/$APP_DIR/Bridging-Header.h" <<'EOF'
 #import "idevice.h"
 EOF
 
+          echo "Bridging-Header.h contents:"
           cat "$GITHUB_WORKSPACE/$APP_DIR/Bridging-Header.h"
 
       - name: Verify project integrity
@@ -125,16 +158,20 @@ EOF
         shell: bash
         run: |
           set -euo pipefail
-          echo "Schemes:"
+
+          echo "=== Available Schemes ==="
           xcodebuild -project "$PROJECT_FILE" -list
 
+          echo ""
+          echo "=== Source File Counts ==="
           echo "Swift files: $(find "$APP_DIR" -name '*.swift' | wc -l)"
-          echo "Headers: $(find "$APP_DIR" -name '*.h' | wc -l)"
-          echo "Libraries: $(find "$APP_DIR" -name '*.a' | wc -l)"
+          echo "Headers:     $(find "$APP_DIR" -name '*.h' | wc -l)"
+          echo "Libraries:   $(find "$APP_DIR" -name '*.a' | wc -l)"
 
-          if grep -q '<<<<<<<\|=======\|>>>>>>>' "$APP_DIR"/*.swift 2>/dev/null; then
+          # Detect merge conflict markers
+          if grep -rl '<<<<<<<' "$APP_DIR"/*.swift 2>/dev/null | grep -q .; then
             echo "ERROR: Merge conflict markers found in Swift files"
-            grep -l '<<<<<<<\|=======\|>>>>>>>' "$APP_DIR"/*.swift
+            grep -rl '<<<<<<<' "$APP_DIR"/*.swift
             exit 1
           fi
 
@@ -142,13 +179,13 @@ EOF
         uses: actions/cache@v4
         with:
           path: ~/Library/Developer/Xcode/DerivedData
-          key: derived-data-${{ github.ref }}-${{ hashFiles('MusicManager.xcodeproj/project.pbxproj', 'MusicManager/**/*.swift') }}
+          key: |
+            derived-data-${{ runner.os }}-${{ hashFiles('MusicManager.xcodeproj/project.pbxproj', 'MusicManager/**/*.swift') }}
           restore-keys: |
-            derived-data-${{ github.ref }}-
-            derived-data-
+            derived-data-${{ runner.os }}-
 
       - name: Build unsigned IPA
-        id: xcode-build
+        id: build
         shell: bash
         run: |
           set -euo pipefail
@@ -157,7 +194,12 @@ EOF
           rm -rf "$DERIVED_DATA"
           mkdir -p "$DERIVED_DATA"
 
-          # Build with detailed logs
+          echo "=== Starting xcodebuild ==="
+          echo "Configuration: $CONFIGURATION"
+          echo "SDK: iphoneos"
+          echo "DerivedData: $DERIVED_DATA"
+
+          # Build with filtered output for readability
           xcodebuild \
             -project "$PROJECT_FILE" \
             -scheme "$SCHEME" \
@@ -176,42 +218,50 @@ EOF
             SWIFT_TREAT_WARNINGS_AS_ERRORS=NO \
             GCC_TREAT_WARNINGS_AS_ERRORS=NO \
             build \
-            2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" | grep -E '(error:|warning:|BUILD|===|CompileSwift|Ld|CpResource|Generate)' || true
+            2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" | \
+            grep -v '^[[:space:]]*$' | \
+            grep -E '(error:|warning:|BUILD|===|CompileSwift|Ld |CpResource|Generate|Write)' || true
 
           BUILD_RESULT=${PIPESTATUS[0]}
 
           if [[ $BUILD_RESULT -ne 0 ]]; then
-            echo "BUILD FAILED (exit $BUILD_RESULT)"
-            echo "--- Last 80 lines of build log ---"
-            tail -n 80 "$RUNNER_TEMP/xcodebuild.log"
+            echo ""
+            echo "=== BUILD FAILED (exit $BUILD_RESULT) ==="
+            echo "--- Last 100 lines of build log ---"
+            tail -n 100 "$RUNNER_TEMP/xcodebuild.log"
             exit 1
           fi
 
-          echo "BUILD SUCCEEDED"
+          echo "=== BUILD SUCCEEDED ==="
 
-          # Find the .app bundle
+      - name: Locate app bundle
+        id: locate-app
+        shell: bash
+        run: |
+          DERIVED_DATA="$RUNNER_TEMP/DerivedData"
           APP_PATH="$(find "$DERIVED_DATA" -name '*.app' -type d | head -n 1)"
+
           if [[ -z "$APP_PATH" ]]; then
             echo "ERROR: No .app bundle found in DerivedData"
             find "$DERIVED_DATA" -type d | head -30
             exit 1
           fi
 
-          echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
+          echo "app-path=$APP_PATH" >> "$GITHUB_OUTPUT"
           echo "Found app: $APP_PATH"
           ls -la "$APP_PATH"
 
       - name: Package IPA
-        id: package-ipa
+        id: package
         shell: bash
         run: |
           set -euo pipefail
 
+          APP_PATH="${{ steps.locate-app.outputs.app-path }}"
           ARTIFACT_PATH="$GITHUB_WORKSPACE/ci-artifacts"
-          mkdir -p "$ARTIFACT_PATH"
-
-          # Create Payload directory
           PAYLOAD_DIR="$RUNNER_TEMP/Payload"
+
+          mkdir -p "$ARTIFACT_PATH"
           rm -rf "$PAYLOAD_DIR"
           mkdir -p "$PAYLOAD_DIR"
 
@@ -222,24 +272,27 @@ EOF
           rm -rf "$PAYLOAD_DIR/$APP_NAME/_CodeSignature" 2>/dev/null || true
           rm -f "$PAYLOAD_DIR/$APP_NAME/embedded.mobileprovision" 2>/dev/null || true
 
-          # Remove incompatible simulator slices if any slipped in
+          # Log binary architectures
           BINARY_PATH="$PAYLOAD_DIR/$APP_NAME/$SCHEME"
           if [[ -f "$BINARY_PATH" ]]; then
             echo "Binary architectures:"
             lipo -info "$BINARY_PATH" || true
           fi
 
-          # Create IPA using ditto for proper resource forks
-          ditto -c -k --sequesterRsrc --keepParent "$PAYLOAD_DIR" "$ARTIFACT_PATH/ByeTunes-unsigned.ipa"
+          # Create IPA
+          IPA_PATH="$ARTIFACT_PATH/ByeTunes-unsigned.ipa"
+          ditto -c -k --sequesterRsrc --keepParent "$PAYLOAD_DIR" "$IPA_PATH"
 
-          echo "IPA created:"
-          ls -lh "$ARTIFACT_PATH/ByeTunes-unsigned.ipa"
-          du -sh "$ARTIFACT_PATH/ByeTunes-unsigned.ipa"
+          IPA_SIZE="$(du -sh "$IPA_PATH" | cut -f1)"
+          echo "ipa-size=$IPA_SIZE" >> "$GITHUB_OUTPUT"
+          echo "IPA created: $IPA_SIZE"
+          ls -lh "$IPA_PATH"
 
-          # Save build log
+          # Save build log alongside artifact
           cp "$RUNNER_TEMP/xcodebuild.log" "$ARTIFACT_PATH/"
 
       - name: Upload artifacts
+        id: upload
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -254,10 +307,7 @@ EOF
         if: always()
         shell: bash
         run: |
-          IPA_SIZE=""
-          if [[ -f "ci-artifacts/ByeTunes-unsigned.ipa" ]]; then
-            IPA_SIZE="$(du -sh ci-artifacts/ByeTunes-unsigned.ipa | cut -f1)"
-          fi
+          IPA_SIZE="${{ steps.package.outputs.ipa-size }}"
 
           echo "## ByeTunes Build Summary" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
@@ -267,13 +317,19 @@ EOF
           echo "| Rust toolchain | ${{ steps.rust-toolchain.outcome == 'success' && '✅' || '❌' }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Build idevice-ffi | ${{ steps.build-idevice.outcome == 'success' && '✅' || '❌' }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Verify project | ${{ steps.verify-project.outcome == 'success' && '✅' || '❌' }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Xcode build | ${{ steps.xcode-build.outcome == 'success' && '✅' || '❌' }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Package IPA | ${{ steps.package-ipa.outcome == 'success' && '✅' || '❌' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Xcode build | ${{ steps.build.outcome == 'success' && '✅' || '❌' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Package IPA | ${{ steps.package.outcome == 'success' && '✅' || '❌' }} |" >> "$GITHUB_STEP_SUMMARY"
 
           if [[ -n "$IPA_SIZE" ]]; then
             echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "### Artifact" >> "$GITHUB_STEP_SUMMARY"
+            echo "### 📦 Artifact" >> "$GITHUB_STEP_SUMMARY"
             echo "- **IPA Size**: $IPA_SIZE" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Download**: \`ByeTunes-unsigned-${{ github.run_id }}-${{ github.run_attempt }}\`" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [[ "${{ steps.build.outcome }}" == "failure" ]]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "### ⚠️ Build failed — see logs for details" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Attach IPA to release
@@ -281,3 +337,4 @@ EOF
         uses: softprops/action-gh-release@v2
         with:
           files: ci-artifacts/ByeTunes-unsigned.ipa
+          fail_on_unmatched_files: false
