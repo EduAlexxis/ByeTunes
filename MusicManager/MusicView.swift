@@ -1420,4 +1420,218 @@ struct MusicView: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
     }
+
+    @ViewBuilder
+    private func duplicateStatChip(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title.uppercased())
+                .font(.caption2.weight(.semibold))
+                .foregroundColor(.secondary)
+            Text(value)
+                .font(.subheadline.weight(.bold))
+                .foregroundColor(.primary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func duplicateComparisonRow(icon: String, title: String, value: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .frame(width: 14)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundColor(.secondary)
+                Text(value)
+                    .font(.caption)
+                    .foregroundColor(.primary)
+                    .lineLimit(2)
+            }
+        }
+    }
+
+    private func duplicateDisplayFilename(for song: SongMetadata) -> String {
+        let originalName = song.localURL.deletingPathExtension().lastPathComponent
+        let cleanedName = originalName.replacingOccurrences(
+            of: #"^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}[_\-\s]+"#,
+            with: "",
+            options: .regularExpression
+        )
+        let finalName = cleanedName.replacingOccurrences(
+            of: #"^\d{5,}[_\-\s]+"#,
+            with: "",
+            options: .regularExpression
+        )
+        let ext = song.localURL.pathExtension
+        return ext.isEmpty ? finalName : "\(finalName).\(ext)"
+    }
+
+    private func detectDuplicates(incoming: [SongMetadata], existing: [SongMetadata]) -> [DuplicateCandidate] {
+        var seenBySignature: [String: SongMetadata] = [:]
+        existing.forEach { seenBySignature[duplicateSignature(for: $0)] = $0 }
+        var found: [DuplicateCandidate] = []
+
+        for song in incoming {
+            let sig = duplicateSignature(for: song)
+            if let matched = seenBySignature[sig] {
+                let reason = existing.contains(where: { $0.id == matched.id })
+                    ? "Matches a song already in queue"
+                    : "Matches another selected import"
+                found.append(DuplicateCandidate(incoming: song, matched: matched, reason: reason))
+            } else {
+                seenBySignature[sig] = song
+            }
+        }
+        return found
+    }
+
+    private func duplicateSignature(for song: SongMetadata) -> String {
+        "\(normalizeDuplicateField(song.title))|\(normalizeDuplicateField(song.artist))|\(normalizeDuplicateField(song.album))"
+    }
+
+    private func normalizeDuplicateField(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+    }
+
+    private func finalizeImportedSongs(
+        songsToImport: [SongMetadata],
+        duplicateIDsToSkip: Set<UUID>,
+        includeDuplicates: Bool,
+        initialSkippedCount: Int,
+        alreadyImportedCount: Int = 0
+    ) {
+        let acceptedSongs: [SongMetadata]
+        let duplicateSkipped = duplicateIDsToSkip.count
+
+        if includeDuplicates {
+            acceptedSongs = songsToImport
+        } else {
+            acceptedSongs = songsToImport.filter { !duplicateIDsToSkip.contains($0.id) }
+            let skippedSongs = songsToImport.filter { duplicateIDsToSkip.contains($0.id) }
+            for song in skippedSongs {
+                if !SongMetadata.shouldPreserveLocalFile(song.localURL) {
+                    try? FileManager.default.removeItem(at: song.localURL)
+                }
+            }
+        }
+
+        let totalImported = alreadyImportedCount + acceptedSongs.count
+
+        if !acceptedSongs.isEmpty {
+            withAnimation(.easeOut(duration: 0.2)) {
+                songs.append(contentsOf: acceptedSongs)
+            }
+        }
+
+        if totalImported > 0 {
+            let totalSkipped = initialSkippedCount + duplicateSkipped
+            let title: String
+            if totalSkipped > 0 {
+                title = "Imported \(totalImported), Skipped \(totalSkipped)"
+            } else {
+                title = totalImported == 1 ? "Imported 1 Song" : "Imported \(totalImported) Songs"
+            }
+            showToast(title: title, icon: "checkmark.circle.fill")
+        } else {
+            Logger.shared.log("[MusicView] No songs imported from selection")
+            showToast(title: "No songs imported", icon: "exclamationmark.triangle")
+        }
+    }
+
+    private func clearPendingDuplicateState() {
+        pendingImportedSongs.removeAll()
+        pendingAlreadyImportedCount = 0
+        detectedDuplicates.removeAll()
+        duplicateImportSelection.removeAll()
+        pendingImportSkippedCount = 0
+        showingDuplicateSheet = false
+    }
+
+    func injectAsPlaylist(name: String? = nil, pid: Int64? = nil) {
+        guard !songs.isEmpty else { return }
+        if name == nil && pid == nil { return }
+        
+        isInjecting = true
+        injectProgress = 0
+        totalInjectCount = songs.count
+        currentInjectIndex = 0
+        
+        manager.startHeartbeat { success in
+            guard success else {
+                DispatchQueue.main.async {
+                    self.showToast(title: "Connection Failed", icon: "exclamationmark.triangle.fill")
+                    self.isInjecting = false
+                }
+                return
+            }
+             
+            DispatchQueue.main.async {
+                self.startPlaylistInjection(name: name, pid: pid)
+            }
+        }
+    }
+
+    private func startPlaylistInjection(name: String?, pid: Int64?) {
+        let progressTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+            if self.injectProgress < 0.9 {
+                self.injectProgress += 0.02
+            }
+        }
+        
+        var lastProcessedIndex = 0
+        let songsToInfect = songs
+        
+        manager.injectSongsAsPlaylist(songs: songsToInfect, playlistName: name, targetPlaylistPid: pid, progress: { progressText in
+            DispatchQueue.main.async {
+                if let range = progressText.range(of: #"(\d+)/\d+"#, options: .regularExpression),
+                   let index = Int(progressText[range].split(separator: "/").first ?? "") {
+                    self.currentInjectIndex = index
+                    self.injectProgress = CGFloat(index) / CGFloat(self.totalInjectCount) * 0.9
+                    
+                    while lastProcessedIndex < index && !self.songs.isEmpty {
+                        _ = self.songs.removeFirst()
+                        lastProcessedIndex += 1
+                    }
+                }
+            }
+        }) { success in
+            DispatchQueue.main.async {
+                progressTimer.invalidate()
+                
+                withAnimation(.easeOut(duration: 0.3)) {
+                    self.injectProgress = 1.0
+                }
+                
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    self.isInjecting = false
+                    self.injectProgress = 0
+                    
+                    if success {
+                        for song in songsToInfect {
+                            if !SongMetadata.shouldPreserveLocalFile(song.localURL) {
+                                try? FileManager.default.removeItem(at: song.localURL)
+                            }
+                        }
+
+                        self.showToast(title: "Playlist Updated", icon: "checkmark.circle.fill")
+                        withAnimation {
+                            self.songs.removeAll()
+                        }
+                    } else {
+                        self.showToast(title: "Playlist Failed", icon: "xmark.circle.fill")
+                    }
+                }
+            }
+        }
+    }
 }
