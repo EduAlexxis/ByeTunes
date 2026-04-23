@@ -15,6 +15,16 @@ concurrency:
   group: unsigned-ios-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  PROJECT_FILE: MusicManager.xcodeproj
+  SCHEME: MusicManager
+  APP_DIR: MusicManager
+  CONFIGURATION: Release
+  ARTIFACT_DIR: ci-artifacts
+  # Enable Actions step debug logging
+  ACTIONS_STEP_DEBUG: true
+  ACTIONS_RUNNER_DEBUG: true
+
 jobs:
   build-unsigned-ipa:
     name: Build unsigned device IPA
@@ -22,58 +32,156 @@ jobs:
 
     permissions:
       contents: write
-
-    env:
-      PROJECT_FILE: MusicManager.xcodeproj
-      SCHEME: MusicManager
-      APP_DIR: MusicManager
-      CONFIGURATION: Release
-      ARTIFACT_DIR: ci-artifacts
+      actions: read
+      checks: write
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Dump runner environment
+        shell: bash
+        run: |
+          echo "===== RUNNER ENVIRONMENT ====="
+          echo "Runner OS: $(uname -a)"
+          echo "macOS Version: $(sw_vers -productVersion)"
+          echo "Architecture: $(uname -m)"
+          echo "Host name: $(hostname)"
+          echo "Date: $(date)"
+          echo "GitHub Ref: ${{ github.ref }}"
+          echo "GitHub SHA: ${{ github.sha }}"
+          echo "GitHub Event: ${{ github.event_name }}"
+          echo "GitHub Actor: ${{ github.actor }}"
+          echo "GitHub Run ID: ${{ github.run_id }}"
+          echo "GitHub Run Number: ${{ github.run_number }}"
+          echo "Workspace: $GITHUB_WORKSPACE"
+          echo "Runner Temp: $RUNNER_TEMP"
+          echo ""
+          echo "===== ENVIRONMENT VARIABLES ====="
+          env | sort || true
+          echo ""
+          echo "===== PATH ====="
+          echo "$PATH" | tr ':' '\n'
+          echo ""
+          echo "===== INSTALLED XCODE VERSIONS ====="
+          ls -la /Applications/ | grep Xcode || true
+          echo ""
+          echo "===== CURRENT XCODE ====="
+          xcode-select -p
+          xcodebuild -version
+          echo ""
+          echo "===== AVAILABLE SDKS ====="
+          xcodebuild -showsdks 2>&1 || true
+          echo ""
+          echo "===== RUST TOOLCHAIN ====="
+          rustc --version 2>/dev/null || echo "rustc not yet installed"
+          cargo --version 2>/dev/null || echo "cargo not yet installed"
+          rustup show 2>/dev/null || true
+          echo ""
+          echo "===== GIT STATUS ====="
+          git log --oneline -5
+          echo ""
+          git status
 
       - name: Select newest available Xcode
+        id: setup-xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
 
-      - name: Show selected Xcode
+      - name: Verify Xcode selection
+        shell: bash
         run: |
+          echo "===== XCODE SELECTION VERIFICATION ====="
           xcode-select -p
           xcodebuild -version
           xcodebuild -showsdks
+          echo ""
+          echo "XCODE_PATH=$(xcode-select -p)" >> "$GITHUB_ENV"
 
       - name: Install Rust with iOS target
+        id: rust-toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-ios
+
+      - name: Verify Rust installation
+        shell: bash
+        run: |
+          echo "===== RUST VERIFICATION ====="
+          rustc --version
+          cargo --version
+          rustup target list --installed
+          echo ""
+          echo "CARGO_HOME=${CARGO_HOME:-$HOME/.cargo}"
+          echo "RUSTUP_HOME=${RUSTUP_HOME:-$HOME/.rustup}"
+          which rustc
+          which cargo
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: byetunes-idevice-ffi
 
+      - name: Debug cache state
+        shell: bash
+        run: |
+          echo "===== CACHE STATE ====="
+          ls -la "${CARGO_HOME:-$HOME/.cargo}" 2>/dev/null || true
+          echo ""
+          du -sh "${CARGO_HOME:-$HOME/.cargo}" 2>/dev/null || true
+
       - name: Build idevice-ffi and stage required files
+        id: build-idevice
         shell: bash
         run: |
           set -euxo pipefail
 
+          echo "===== CLONING IDEVICE ====="
           git clone --depth 1 https://github.com/jkcoxson/idevice "$RUNNER_TEMP/idevice"
+          echo "Clone complete. Contents:"
+          ls -la "$RUNNER_TEMP/idevice"
+
           pushd "$RUNNER_TEMP/idevice"
 
           export IPHONEOS_DEPLOYMENT_TARGET=16.0
-          cargo build --release --package idevice-ffi --target aarch64-apple-ios
+          echo "===== CARGO BUILD START ====="
+          echo "PWD: $(pwd)"
+          echo "IPHONEOS_DEPLOYMENT_TARGET=$IPHONEOS_DEPLOYMENT_TARGET"
+
+          # Build with verbose output captured
+          cargo build --release --package idevice-ffi --target aarch64-apple-ios 2>&1 | tee "$RUNNER_TEMP/cargo-build.log"
+
+          echo "===== CARGO BUILD COMPLETE ====="
+          echo "Target directory contents:"
+          find target -type f -name "*.a" | head -20 || true
+          echo ""
+          echo "Header search:"
+          find . -type f -name "idevice.h" | head -20 || true
 
           HEADER_PATH="$(find . -type f -name 'idevice.h' | head -n 1)"
           LIB_PATH="$(find target -type f -path '*aarch64-apple-ios/release/libidevice_ffi.a' | head -n 1)"
 
-          test -n "$HEADER_PATH"
-          test -n "$LIB_PATH"
+          echo "HEADER_PATH=$HEADER_PATH"
+          echo "LIB_PATH=$LIB_PATH"
 
-          cp "$HEADER_PATH" "$GITHUB_WORKSPACE/$APP_DIR/idevice.h"
-          cp "$LIB_PATH" "$GITHUB_WORKSPACE/$APP_DIR/libidevice_ffi.a"
+          if [ -z "$HEADER_PATH" ]; then
+            echo "ERROR: idevice.h not found"
+            find . -type f -name "*.h" | head -20 || true
+            exit 1
+          fi
+
+          if [ -z "$LIB_PATH" ]; then
+            echo "ERROR: libidevice_ffi.a not found"
+            find target -type f -name "*.a" | head -20 || true
+            exit 1
+          fi
+
+          echo "===== STAGING FILES ====="
+          cp -v "$HEADER_PATH" "$GITHUB_WORKSPACE/$APP_DIR/idevice.h"
+          cp -v "$LIB_PATH" "$GITHUB_WORKSPACE/$APP_DIR/libidevice_ffi.a"
 
           popd
 
@@ -81,21 +189,49 @@ jobs:
           #import "idevice.h"
           EOF
 
+          echo "===== STAGED FILES ====="
           ls -la "$GITHUB_WORKSPACE/$APP_DIR"
+          echo ""
+          echo "idevice.h size: $(stat -f%z "$GITHUB_WORKSPACE/$APP_DIR/idevice.h" 2>/dev/null || stat -c%s "$GITHUB_WORKSPACE/$APP_DIR/idevice.h" 2>/dev/null || echo 'unknown')"
+          echo "libidevice_ffi.a size: $(stat -f%z "$GITHUB_WORKSPACE/$APP_DIR/libidevice_ffi.a" 2>/dev/null || stat -c%s "$GITHUB_WORKSPACE/$APP_DIR/libidevice_ffi.a" 2>/dev/null || echo 'unknown')"
 
       - name: Verify project and scheme
+        id: verify-project
         shell: bash
         run: |
           set -euxo pipefail
+          echo "===== PROJECT VERIFICATION ====="
           xcodebuild -list -project "$PROJECT_FILE"
+          echo ""
+          echo "===== SCHEME INFO ====="
+          xcodebuild -project "$PROJECT_FILE" -list
+          echo ""
+          echo "===== PROJECT FILE TREE ====="
+          find "$PROJECT_FILE" -type f | head -30
+          echo ""
+          echo "===== SOURCE FILES ====="
+          find "$APP_DIR" -name "*.swift" | wc -l | xargs echo "Swift files:"
+          find "$APP_DIR" -name "*.h" | wc -l | xargs echo "Header files:"
+          find "$APP_DIR" -name "*.a" | wc -l | xargs echo "Static libraries:"
 
       - name: Build unsigned app for real iOS devices
+        id: xcode-build
         shell: bash
         run: |
           set -euxo pipefail
 
           DERIVED_DATA="$RUNNER_TEMP/DerivedData"
+          BUILD_LOG="$RUNNER_TEMP/xcodebuild.log"
+          BUILD_ERRORS="$RUNNER_TEMP/xcodebuild-errors.log"
 
+          echo "===== XCODE BUILD START ====="
+          echo "DerivedData: $DERIVED_DATA"
+          echo "Build log: $BUILD_LOG"
+          echo "Configuration: $CONFIGURATION"
+          echo "SDK: iphoneos"
+          echo ""
+
+          # Run build and capture all output
           xcodebuild \
             -project "$PROJECT_FILE" \
             -scheme "$SCHEME" \
@@ -106,11 +242,49 @@ jobs:
             clean build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY=\"\" \
-            DEVELOPMENT_TEAM=\"\" \
-            | tee "$RUNNER_TEMP/xcodebuild.log"
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            ONLY_ACTIVE_ARCH=NO \
+            2>&1 | tee "$BUILD_LOG"
+
+          echo "===== XCODE BUILD COMPLETE ====="
+
+      - name: Analyze build output
+        if: always()
+        shell: bash
+        run: |
+          echo "===== BUILD OUTPUT ANALYSIS ====="
+          BUILD_LOG="$RUNNER_TEMP/xcodebuild.log"
+
+          if [ -f "$BUILD_LOG" ]; then
+            echo "Build log size: $(wc -l < "$BUILD_LOG") lines"
+            echo ""
+            echo "--- BUILD RESULTS ---"
+            grep -E "(BUILD|SUCCEEDED|FAILED|error:|warning:|===)" "$BUILD_LOG" | tail -30 || true
+            echo ""
+            echo "--- ERROR COUNT ---"
+            grep -c "error:" "$BUILD_LOG" 2>/dev/null || echo "0"
+            echo ""
+            echo "--- WARNING COUNT ---"
+            grep -c "warning:" "$BUILD_LOG" 2>/dev/null || echo "0"
+            echo ""
+            echo "--- LAST 50 LINES OF BUILD LOG ---"
+            tail -n 50 "$BUILD_LOG"
+          else
+            echo "Build log not found!"
+          fi
+
+          echo ""
+          echo "===== DERIVED DATA CONTENTS ====="
+          DERIVED_DATA="$RUNNER_TEMP/DerivedData"
+          if [ -d "$DERIVED_DATA" ]; then
+            find "$DERIVED_DATA/Build/Products" -maxdepth 2 -type d 2>/dev/null || true
+          else
+            echo "DerivedData not found"
+          fi
 
       - name: Package unsigned IPA for SideStore and AltStore
+        id: package-ipa
         shell: bash
         run: |
           set -euxo pipefail
@@ -120,38 +294,97 @@ jobs:
           ARTIFACT_PATH="$GITHUB_WORKSPACE/$ARTIFACT_DIR"
           APP_PATH="$DERIVED_DATA/Build/Products/$CONFIGURATION-iphoneos/$SCHEME.app"
 
-          test -d "$APP_PATH"
+          echo "===== PACKAGE STEP ====="
+          echo "Expected app path: $APP_PATH"
+
+          if [ ! -d "$APP_PATH" ]; then
+            echo "ERROR: App bundle not found at expected path"
+            echo "Searching for .app bundles in DerivedData..."
+            find "$DERIVED_DATA" -name "*.app" -type d 2>/dev/null || true
+            exit 1
+          fi
+
+          echo "App bundle found. Contents:"
+          ls -la "$APP_PATH"
+          echo ""
+          echo "App bundle size:"
+          du -sh "$APP_PATH"
 
           rm -rf "$PAYLOAD_DIR" "$ARTIFACT_PATH"
           mkdir -p "$PAYLOAD_DIR" "$ARTIFACT_PATH"
           cp -R "$APP_PATH" "$PAYLOAD_DIR/"
 
+          echo ""
+          echo "===== CODE SIGNING CLEANUP ====="
           rm -rf "$PAYLOAD_DIR/$SCHEME.app/_CodeSignature" || true
           rm -f "$PAYLOAD_DIR/$SCHEME.app/embedded.mobileprovision" || true
 
-          if [ -d "$DERIVED_DATA/Build/Products/$CONFIGURATION-iphoneos/$SCHEME.app.dSYM" ]; then
-            cp -R "$DERIVED_DATA/Build/Products/$CONFIGURATION-iphoneos/$SCHEME.app.dSYM" "$ARTIFACT_PATH/"
+          echo ""
+          echo "===== ENTITLEMENTS DUMP ====="
+          codesign -d --entitlements :- "$PAYLOAD_DIR/$SCHEME.app" 2>/dev/null || echo "No entitlements found (expected for unsigned)"
+
+          echo ""
+          echo "===== DSYM HANDLING ====="
+          DSYM_PATH="$DERIVED_DATA/Build/Products/$CONFIGURATION-iphoneos/$SCHEME.app.dSYM"
+          if [ -d "$DSYM_PATH" ]; then
+            echo "dSYM found: $DSYM_PATH"
+            cp -R "$DSYM_PATH" "$ARTIFACT_PATH/"
+            du -sh "$DSYM_PATH"
+          else
+            echo "No dSYM found at $DSYM_PATH"
           fi
 
+          echo ""
+          echo "===== CREATING IPA ====="
           ditto -c -k --sequesterRsrc --keepParent "$PAYLOAD_DIR" "$ARTIFACT_PATH/ByeTunes-unsigned.ipa"
           cp -R "$APP_PATH" "$ARTIFACT_PATH/"
           cp "$RUNNER_TEMP/xcodebuild.log" "$ARTIFACT_PATH/"
 
+          echo ""
+          echo "===== ARTIFACTS ====="
           ls -la "$ARTIFACT_PATH"
+          echo ""
+          echo "IPA size: $(du -sh "$ARTIFACT_PATH/ByeTunes-unsigned.ipa" | cut -f1)"
 
-      - name: Upload unsigned IPA artifact
+      - name: Upload build artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ByeTunes-unsigned-iphoneos
+          name: ByeTunes-unsigned-iphoneos-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ci-artifacts/ByeTunes-unsigned.ipa
             ci-artifacts/MusicManager.app
             ci-artifacts/MusicManager.app.dSYM
             ci-artifacts/xcodebuild.log
-          if-no-files-found: error
+            ${{ runner.temp }}/cargo-build.log
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Build job summary
+        if: always()
+        shell: bash
+        run: |
+          echo "===== BUILD SUMMARY ====="
+          echo "| Step | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|--------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Environment dump | ✅ |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Xcode selection | ${{ steps.setup-xcode.outcome == 'success' && '✅' || '❌' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Rust toolchain | ${{ steps.rust-toolchain.outcome == 'success' && '✅' || '❌' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Build idevice-ffi | ${{ steps.build-idevice.outcome == 'success' && '✅' || '❌' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Verify project | ${{ steps.verify-project.outcome == 'success' && '✅' || '❌' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Xcode build | ${{ steps.xcode-build.outcome == 'success' && '✅' || '❌' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Package IPA | ${{ steps.package-ipa.outcome == 'success' && '✅' || '❌' }} |" >> "$GITHUB_STEP_SUMMARY"
+
+          ARTIFACT_PATH="$GITHUB_WORKSPACE/$ARTIFACT_DIR"
+          if [ -f "$ARTIFACT_PATH/ByeTunes-unsigned.ipa" ]; then
+            SIZE=$(du -sh "$ARTIFACT_PATH/ByeTunes-unsigned.ipa" | cut -f1)
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "## Artifact" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **IPA**: \`ByeTunes-unsigned.ipa\` ($SIZE)" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Attach unsigned IPA to GitHub release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' && success()
         uses: softprops/action-gh-release@v2
         with:
           files: |

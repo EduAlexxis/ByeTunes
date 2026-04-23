@@ -3470,15 +3470,15 @@ class DeviceManager: ObservableObject {
             
             var afc: AfcClientHandle?
             self.connectAfcClient(&afc)
-            if afc != nil {
-                
-                
-                
-                afc_make_directory(afc, musicDir)
-                afc_make_directory(afc, "/iTunes_Control/iTunes/Artwork/Originals")
-                afc_client_free(afc)
+            guard afc != nil else {
+                Logger.shared.log("[DeviceManager] ERROR: AFC client is nil")
+                DispatchQueue.main.async { completion(false) }
+                return
             }
+            defer { afc_client_free(afc) }
             
+            afc_make_directory(afc, musicDir)
+            afc_make_directory(afc, "/iTunes_Control/iTunes/Artwork/Originals")
             
             var dbURL: URL
             var existingFiles = Set<String>()
@@ -3524,26 +3524,21 @@ class DeviceManager: ObservableObject {
             
             
             progress("Uploading songs...")
+            Logger.shared.log("[DeviceManager] Step 4: Uploading MP3 files (playlist mode)")
             
             var uploadedCount = 0
             
             for (index, song) in validSongs.enumerated() {
                 
                 if existingFiles.contains(song.remoteFilename) {
+                    Logger.shared.log("[DeviceManager] Skipping (already exists): \(song.title)")
                     continue
                 }
                 
                 progress("Uploading \(index + 1)/\(validSongs.count): \(song.title)")
                 
-                let semaphore = DispatchSemaphore(value: 0)
-                var uploadSuccess = false
                 let remotePath = "\(musicDir)/\(song.remoteFilename)"
-                
-                self.uploadFileToDevice(localURL: song.localURL, remotePath: remotePath) { success in
-                    uploadSuccess = success
-                    semaphore.signal()
-                }
-                semaphore.wait()
+                let uploadSuccess = self.uploadFileToDeviceWithReconnect(localURL: song.localURL, remotePath: remotePath, afc: &afc, verify: false)
                 
                 if !uploadSuccess {
                     Logger.shared.log("[DeviceManager] ERROR: Failed to upload \(song.title)")
@@ -3552,43 +3547,29 @@ class DeviceManager: ObservableObject {
                 }
                 uploadedCount += 1
                 
-                
-
+                if let artworkData = song.artworkData, index < artworkInfo.count {
+                    let info = artworkInfo[index]
+                    let artworkRelativePath = info.artworkHash
+                    
+                    let pathComponents = artworkRelativePath.components(separatedBy: "/")
+                    let folderName = pathComponents.count >= 1 ? pathComponents[0] : "00"
+                    let artworkDir = "/iTunes_Control/iTunes/Artwork/Originals/\(folderName)"
+                    let artworkPath = "/iTunes_Control/iTunes/Artwork/Originals/\(artworkRelativePath)"
+                    
+                    Logger.shared.log("[DeviceManager] Uploading artwork for: \(song.title) -> \(artworkPath)")
+                    afc_make_directory(afc, "/iTunes_Control/iTunes/Artwork")
+                    afc_make_directory(afc, "/iTunes_Control/iTunes/Artwork/Originals")
+                    afc_make_directory(afc, artworkDir)
+                    
+                    if self.uploadDataToDeviceWithReconnect(artworkData, remotePath: artworkPath, afc: &afc, verify: false) {
+                        Logger.shared.log("[DeviceManager] Artwork uploaded to: \(artworkPath)")
+                    } else {
+                        Logger.shared.log("[DeviceManager] WARNING: Artwork upload failed for: \(song.title)")
+                    }
+                }
             }
             
-            
-
-            
-            
-            
-            var artworkIndex = 0
-            
-            for song in validSongs {
-                 if existingFiles.contains(song.remoteFilename) { continue }
-                 
-                 
-                 if song.artworkData != nil {
-                     if artworkIndex < artworkInfo.count {
-                         let info = artworkInfo[artworkIndex]
-                         let artworkData = song.artworkData!
-                         
-                         let artworkRelativePath = info.artworkHash
-                         let pathComponents = artworkRelativePath.components(separatedBy: "/")
-                         let fileName = pathComponents.last ?? "unknown"
-                         let artworkPath = "/iTunes_Control/iTunes/Artwork/Originals/\(artworkRelativePath)"
-                         
-                         let tempArtwork = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
-                         try? artworkData.write(to: tempArtwork)
-                         
-                         let semArt = DispatchSemaphore(value: 0)
-                         self.uploadFileToDevice(localURL: tempArtwork, remotePath: artworkPath) { _ in semArt.signal() }
-                         semArt.wait()
-                         try? FileManager.default.removeItem(at: tempArtwork)
-                         
-                         artworkIndex += 1
-                     }
-                 }
-            }
+            Logger.shared.log("[DeviceManager] Uploaded: \(uploadedCount)")
 
             
             progress("Uploading database...")
@@ -3599,14 +3580,7 @@ class DeviceManager: ObservableObject {
             let shmPath = "/iTunes_Control/iTunes/MediaLibrary.sqlitedb-shm"
             let walPath = "/iTunes_Control/iTunes/MediaLibrary.sqlitedb-wal"
             
-            
-            let semUploadDB = DispatchSemaphore(value: 0)
-            var dbUploadSuccess = false
-            self.uploadFileToDevice(localURL: dbURL, remotePath: tempDBPath) { success in
-                dbUploadSuccess = success
-                semUploadDB.signal()
-            }
-            semUploadDB.wait()
+            let dbUploadSuccess = self.uploadFileToDeviceWithReconnect(localURL: dbURL, remotePath: tempDBPath, afc: &afc)
             
             if !dbUploadSuccess {
                 Logger.shared.log("[DeviceManager] ERROR: Failed to upload temp database")
@@ -3614,51 +3588,45 @@ class DeviceManager: ObservableObject {
                 return
             }
             
+            afc_remove_path(afc, shmPath)
+            afc_remove_path(afc, walPath)
+            afc_remove_path(afc, finalDBPath)
             
-            var afcSwap: AfcClientHandle?
-            self.connectAfcClient(&afcSwap)
-            
-            guard afcSwap != nil else {
-                Logger.shared.log("[DeviceManager] ERROR: Failed to connect AFC for atomic swap")
-                DispatchQueue.main.async { completion(false) }
-                return
-            }
-            
-            
-            afc_remove_path(afcSwap, shmPath)
-            afc_remove_path(afcSwap, walPath)
-            
-            
-            afc_remove_path(afcSwap, finalDBPath)
-            
-            
-            let renameErr = afc_rename_path(afcSwap, tempDBPath, finalDBPath)
+            let renameErr = afc_rename_path(afc, tempDBPath, finalDBPath)
             
             if renameErr != nil {
                 Logger.shared.log("[DeviceManager] ERROR: Failed to rename database (Error: \(renameErr!))")
                  
-                 afc_remove_path(afcSwap, tempDBPath)
-                 afc_client_free(afcSwap)
+                 afc_remove_path(afc, tempDBPath)
                  DispatchQueue.main.async { completion(false) }
                  return
             }
             
             Logger.shared.log("[DeviceManager] Database swapped successfully.")
-            afc_client_free(afcSwap)
-            
-            if !dbUploadSuccess {
-                Logger.shared.log("[DeviceManager] ERROR: Failed to upload database")
-                DispatchQueue.main.async { completion(false) }
-                return
-            }
-            
-            
+
             progress("Finalizing...")
-            self.sendSyncFinishedNotification()
+            Logger.shared.log("[DeviceManager] Step 6: Garbage Collection")
             
-            progress("Playlist '\(playlistName ?? "Unknown")' updated!")
-            Logger.shared.log("[DeviceManager] Playlist injection complete!")
-            DispatchQueue.main.async { completion(true) }
+            let newFilenames = validSongs.map { $0.remoteFilename }
+            let snapshotProtectedFiles = self.protectedFilenamesFromAllSnapshots()
+            let allValidFiles = existingFiles.union(newFilenames).union(snapshotProtectedFiles)
+            
+            Logger.shared.log("[DeviceManager] GC Whitelist: \(allValidFiles.count) files (Old: \(existingFiles.count), New: \(newFilenames.count), SnapshotProtected: \(snapshotProtectedFiles.count))")
+
+            self.cleanUpOrphanedFiles(validFilenames: allValidFiles, musicDir: musicDir) { deletedCount in
+                if deletedCount > 0 {
+                   Logger.shared.log("[DeviceManager] Garbage Collection finished. Deleted \(deletedCount) orphaned files.")
+                } else {
+                   Logger.shared.log("[DeviceManager] Garbage Collection finished. No orphans found.")
+                }
+                
+                Logger.shared.log("[DeviceManager] Step 7: Sending sync notification")
+                self.sendSyncFinishedNotification()
+                
+                progress("Playlist '\(playlistName ?? "Unknown")' updated!")
+                Logger.shared.log("[DeviceManager] Playlist injection complete!")
+                DispatchQueue.main.async { completion(true) }
+            }
         }
     }
     
