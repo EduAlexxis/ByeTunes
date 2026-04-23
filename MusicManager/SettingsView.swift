@@ -259,6 +259,7 @@ struct SettingsView: View {
                             
                             Picker("Metadata Source", selection: $metadataSource) {
                                 Text("Local Files").tag("local")
+                                Text("All Providers").tag("all")
                                 Text("iTunes API").tag("itunes")
                                 Text("Deezer API").tag("deezer")
                                 Text("Apple Music").tag("apple")
@@ -294,7 +295,7 @@ struct SettingsView: View {
                             .padding(.horizontal, 16)
                         }
                         
-                        if metadataSource == "itunes" || metadataSource == "deezer" || metadataSource == "apple" || metadataSource == "youtube" {
+                        if metadataSource == "all" || metadataSource == "itunes" || metadataSource == "deezer" || metadataSource == "apple" || metadataSource == "youtube" {
                             Divider().padding(.leading, 56)
                             
                             Toggle(isOn: $autofetchMetadata) {
@@ -364,7 +365,7 @@ struct SettingsView: View {
                         .padding(.vertical, 10)
                         .padding(.horizontal, 16)
                         
-                        if metadataSource == "itunes" {
+                        if metadataSource == "itunes" || metadataSource == "all" {
                                 Divider().padding(.leading, 56)
                                 
                                 HStack {
