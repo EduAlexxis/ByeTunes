@@ -262,6 +262,7 @@ struct SettingsView: View {
                                 Text("iTunes API").tag("itunes")
                                 Text("Deezer API").tag("deezer")
                                 Text("Apple Music").tag("apple")
+                                Text("YouTube").tag("youtube")
                             }
                             .pickerStyle(.menu)
                             .labelsHidden()
@@ -293,7 +294,7 @@ struct SettingsView: View {
                             .padding(.horizontal, 16)
                         }
                         
-                        if metadataSource == "itunes" || metadataSource == "deezer" || metadataSource == "apple" {
+                        if metadataSource == "itunes" || metadataSource == "deezer" || metadataSource == "apple" || metadataSource == "youtube" {
                             Divider().padding(.leading, 56)
                             
                             Toggle(isOn: $autofetchMetadata) {
