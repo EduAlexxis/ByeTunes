@@ -118,9 +118,8 @@ jobs:
 
             cd "$WORK_DIR"
             export IPHONEOS_DEPLOYMENT_TARGET=16.0
-            export RUSTFLAGS="-C opt-level=3 -C lto=fat"
 
-            cargo build --release --package idevice-ffi --target aarch64-apple-ios 2>&1 | tail -30
+            cargo build --release --package idevice-ffi --target aarch64-apple-ios 2>&1 | tail -40
 
             HEADER_PATH="$(find . -name 'idevice.h' -type f | head -n 1)"
             LIB_PATH="$(find target -path '*aarch64-apple-ios/release/libidevice_ffi.a' -type f | head -n 1)"
