@@ -336,7 +336,7 @@ Make sure you imported the correct file type for your iOS version:
 Found a bug?
 
 - Open an issue in this repository:  
--https://github.com/NightVibes33/ByeTunes/issues
+https://github.com/NightVibes33/ByeTunes/issues
 - Join the Discord community:  
   https://discord.gg/jxWhegfz
 - Include debug logs or exported database files when reporting injection/database issues
