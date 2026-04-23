@@ -25,15 +25,12 @@ struct MusicView: View {
     @State private var totalImportCount = 0
     @State private var importPhaseTitle = "Importing Songs"
     
-    
     @State private var showToast = false
     @State private var toastTitle = ""
     @State private var toastIcon = ""
     
-    
     @State private var currentInjectIndex = 0
     @State private var totalInjectCount = 0
-    
     
     @State private var selectedSongForMatch: SongMetadata?
     @State private var pendingImportedSongs: [SongMetadata] = []
@@ -50,7 +47,6 @@ struct MusicView: View {
         let reason: String
     }
 
-    
     static var supportedAudioTypes: [UTType] {
         var types: [UTType] = [.mp3, .wav, .aiff, .mpeg4Audio, .audio, .folder]
         if let flac = UTType(filenameExtension: "flac") { types.append(flac) }
@@ -71,14 +67,11 @@ struct MusicView: View {
             Color(.systemGroupedBackground)
                 .ignoresSafeArea()
             
-            
             VStack(alignment: .leading, spacing: 10) {
-                
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 10) {
                         Text("Music")
                             .font(.system(size: 34, weight: .bold))
-                        
                         
                         HStack(spacing: 6) {
                             Circle()
@@ -96,9 +89,7 @@ struct MusicView: View {
                 }
                 .padding(.top, 0)
                 
-                
                 VStack(spacing: 12) {
-                    
                     Button {
                         showingMusicPicker = true
                     } label: {
@@ -125,16 +116,13 @@ struct MusicView: View {
                     }
                     .disabled(isImporting)
                     
-                    
                     Button {
                         injectSongs()
                     } label: {
                         GeometryReader { geo in
                             ZStack(alignment: .leading) {
-                                
                                 RoundedRectangle(cornerRadius: 24)
                                     .fill(Color(.systemGray6))
-                                
                                 
                                 if isInjecting {
                                     RoundedRectangle(cornerRadius: 24)
@@ -142,7 +130,6 @@ struct MusicView: View {
                                         .frame(width: geo.size.width * injectProgress)
                                         .animation(.easeInOut(duration: 0.3), value: injectProgress)
                                 }
-                                
                                 
                                 HStack {
                                     Spacer()
@@ -166,8 +153,6 @@ struct MusicView: View {
                     .disabled(!manager.heartbeatReady || songs.isEmpty || isInjecting)
                     .opacity(songs.isEmpty ? 0.5 : 1)
                     
-                    
-                    
                     Button {
                         isFetchingPlaylists = true
                         
@@ -175,7 +160,6 @@ struct MusicView: View {
                             self.existingPlaylists = playlists.map { PlaylistModel(name: $0.name, pid: $0.pid) }
                             self.isFetchingPlaylists = false
                             self.showingPlaylistSheet = true
-                            
                         }
                     } label: {
                         HStack {
@@ -199,7 +183,6 @@ struct MusicView: View {
                     .opacity(songs.isEmpty ? 0.5 : 1)
                 }
                 
-                
                 if !songs.isEmpty && !isInjecting && !shouldHideQueueDuringLargeImport {
                     HStack(spacing: 8) {
                         Image(systemName: "exclamationmark.triangle.fill")
@@ -221,7 +204,6 @@ struct MusicView: View {
                     )
                 }
 
-                
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         Text("Queue")
@@ -290,7 +272,6 @@ struct MusicView: View {
                                 .stroke(Color(.systemGray5), lineWidth: 1)
                         )
                     } else if songs.isEmpty {
-                        
                         VStack(spacing: 16) {
                             Image(systemName: "music.note")
                                 .font(.system(size: 48, weight: .light))
@@ -308,15 +289,12 @@ struct MusicView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 60)
                     } else {
-                        
                         ScrollView {
                             VStack(spacing: 0) {
                                 ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
                                     VStack(spacing: 0) {
-                                        
                                         let canEdit = true
 
-                                        
                                         SongRowView(
                                             song: song,
                                             showEditButton: canEdit,
@@ -358,31 +336,28 @@ struct MusicView: View {
             .padding(.bottom, 40)
             .padding(.horizontal, 20)
             
-
-        
-        
-        if showToast {
-            HStack(spacing: 12) {
-                Image(systemName: toastIcon)
-                    .font(.system(size: 24))
-                    .foregroundColor(.secondary)
-                
-                Text(toastTitle)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundColor(.primary)
-                
-                Spacer()
+            if showToast {
+                HStack(spacing: 12) {
+                    Image(systemName: toastIcon)
+                        .font(.system(size: 24))
+                        .foregroundColor(.secondary)
+                    
+                    Text(toastTitle)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.primary)
+                    
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .background(.thinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .shadow(color: Color.black.opacity(0.15), radius: 10, x: 0, y: 5)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 100)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(100)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-            .background(.thinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .shadow(color: Color.black.opacity(0.15), radius: 10, x: 0, y: 5)
-            .padding(.horizontal, 24)
-            .padding(.bottom, 100)
-            .transition(.move(edge: .bottom).combined(with: .opacity))
-            .zIndex(100)
-        }
         }
         .sheet(isPresented: $showingMusicPicker) {
             DocumentPicker(types: Self.supportedAudioTypes, allowsMultiple: true) { urls in
@@ -419,7 +394,6 @@ struct MusicView: View {
     
     private var playlistSelectionSheet: some View {
         VStack(spacing: 0) {
-            
             HStack {
                 Text("Select Playlist")
                     .font(.system(size: 24, weight: .bold))
@@ -438,7 +412,6 @@ struct MusicView: View {
             
             ScrollView {
                 VStack(spacing: 20) {
-                    
                     Button {
                         showingPlaylistSheet = false
                         
@@ -467,7 +440,6 @@ struct MusicView: View {
                         .cornerRadius(16)
                         .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
                     }
-                    
                     
                     VStack(alignment: .leading, spacing: 10) {
                         Text("EXISTING PLAYLISTS")
@@ -528,8 +500,6 @@ struct MusicView: View {
         guard let urls = urls, !urls.isEmpty else { return }
         
         let metadataSource = UserDefaults.standard.string(forKey: "metadataSource") ?? "local"
-        let useiTunes = (metadataSource == "itunes")
-        let useYouTube = (metadataSource == "youtube")
         let autofetch = UserDefaults.standard.bool(forKey: "autofetchMetadata")
         let fetchLyrics = UserDefaults.standard.bool(forKey: "fetchLyrics")
         
@@ -607,19 +577,11 @@ struct MusicView: View {
                     await Logger.shared.log("[MusicView] Fallback metadata used for \(localURL.lastPathComponent)")
                 }
                 
-                if metadataSource == "apple" && autofetch {
-                    song = await SongMetadata.enrichWithAppleMusicMetadata(song)
-                } else if useiTunes && autofetch {
-                    song = await SongMetadata.enrichWithiTunesMetadata(song)
-                } else if metadataSource == "deezer" && autofetch {
-                    song = await SongMetadata.enrichWithDeezerMetadata(song)
-                } else if useYouTube && autofetch {
-                    song = await SongMetadata.enrichWithYouTubeMetadata(song)
-                } else if metadataSource == "local" && autofetch {
-                    if UserDefaults.standard.bool(forKey: "appleRichMetadata") {
-                        song = await SongMetadata.matchAppleMusicMetadata(song)
-                    }
-                }
+                song = await enrichSongWithSelectedMetadata(
+                    song,
+                    metadataSource: metadataSource,
+                    autofetch: autofetch
+                )
                 
                 let appleSubscriptionLyrics = UserDefaults.standard.bool(forKey: "appleSubscriptionLyrics")
                 if fetchLyrics && !appleSubscriptionLyrics && (song.lyrics == nil || song.lyrics?.isEmpty == true) {
@@ -792,7 +754,174 @@ struct MusicView: View {
         }
     }
 
-    
+    private func enrichSongWithSelectedMetadata(
+        _ song: SongMetadata,
+        metadataSource: String,
+        autofetch: Bool
+    ) async -> SongMetadata {
+        guard autofetch else { return song }
+
+        switch metadataSource {
+        case "apple":
+            return await SongMetadata.enrichWithAppleMusicMetadata(song)
+
+        case "itunes":
+            return await SongMetadata.enrichWithiTunesMetadata(song)
+
+        case "deezer":
+            return await SongMetadata.enrichWithDeezerMetadata(song)
+
+        case "youtube":
+            return await SongMetadata.enrichWithYouTubeMetadata(song)
+
+        case "all":
+            return await enrichSongUsingAllProviders(song)
+
+        case "local":
+            if UserDefaults.standard.bool(forKey: "appleRichMetadata") {
+                return await SongMetadata.matchAppleMusicMetadata(song)
+            }
+            return song
+
+        default:
+            return song
+        }
+    }
+
+    private func enrichSongUsingAllProviders(_ original: SongMetadata) async -> SongMetadata {
+        var merged = original
+
+        let providers: [(String, (SongMetadata) async -> SongMetadata)] = [
+            ("apple", { await SongMetadata.enrichWithAppleMusicMetadata($0) }),
+            ("itunes", { await SongMetadata.enrichWithiTunesMetadata($0) }),
+            ("deezer", { await SongMetadata.enrichWithDeezerMetadata($0) }),
+            ("youtube", { await SongMetadata.enrichWithYouTubeMetadata($0) })
+        ]
+
+        for (name, provider) in providers {
+            let candidate = await provider(merged)
+            merged = mergeSongMetadata(base: merged, candidate: candidate)
+            Logger.shared.log("[MusicView] Applied metadata provider: \(name)")
+        }
+
+        if UserDefaults.standard.bool(forKey: "appleRichMetadata") {
+            let appleRich = await SongMetadata.matchAppleMusicMetadata(merged)
+            merged = mergeSongMetadata(base: merged, candidate: appleRich)
+        }
+
+        return merged
+    }
+
+    private func mergeSongMetadata(base: SongMetadata, candidate: SongMetadata) -> SongMetadata {
+        var result = base
+
+        if shouldReplaceTitle(base.title), !isMeaningfulEmpty(candidate.title) {
+            result.title = candidate.title
+        }
+
+        if shouldReplaceArtist(base.artist), !isMeaningfulEmpty(candidate.artist) {
+            result.artist = candidate.artist
+        }
+
+        if shouldReplaceAlbum(base.album), !isMeaningfulEmpty(candidate.album) {
+            result.album = candidate.album
+        }
+
+        if result.albumArtist == nil || isMeaningfulEmpty(result.albumArtist ?? "") {
+            if let albumArtist = candidate.albumArtist, !isMeaningfulEmpty(albumArtist) {
+                result.albumArtist = albumArtist
+            }
+        }
+
+        if shouldReplaceGenre(base.genre), !isMeaningfulEmpty(candidate.genre) {
+            result.genre = candidate.genre
+        }
+
+        if result.year <= 0 || result.year == Calendar.current.component(.year, from: Date()) {
+            if candidate.year > 0 {
+                result.year = candidate.year
+            }
+        }
+
+        if result.artworkData == nil, let artworkData = candidate.artworkData {
+            result.artworkData = artworkData
+        }
+
+        if result.artworkPreviewData == nil, let artworkPreviewData = candidate.artworkPreviewData {
+            result.artworkPreviewData = artworkPreviewData
+        }
+
+        if result.trackNumber == nil, let trackNumber = candidate.trackNumber {
+            result.trackNumber = trackNumber
+        }
+
+        if result.trackCount == nil, let trackCount = candidate.trackCount {
+            result.trackCount = trackCount
+        }
+
+        if result.discNumber == nil, let discNumber = candidate.discNumber {
+            result.discNumber = discNumber
+        }
+
+        if result.discCount == nil, let discCount = candidate.discCount {
+            result.discCount = discCount
+        }
+
+        if result.lyrics == nil || result.lyrics?.isEmpty == true {
+            if let lyrics = candidate.lyrics, !lyrics.isEmpty {
+                result.lyrics = lyrics
+            }
+        }
+
+        return result
+    }
+
+    private func shouldReplaceTitle(_ value: String) -> Bool {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return true }
+
+        let lowered = trimmed.lowercased()
+        if lowered == "unknown title" { return true }
+
+        let looksLikeStagedFilename = trimmed.range(
+            of: #"^[0-9A-Fa-f-]{36}_"#,
+            options: .regularExpression
+        ) != nil
+
+        return looksLikeStagedFilename
+    }
+
+    private func shouldReplaceArtist(_ value: String) -> Bool {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return true }
+
+        let lowered = trimmed.lowercased()
+        if lowered == "unknown artist" { return true }
+
+        let looksLikeStagedFilename = trimmed.range(
+            of: #"^[0-9A-Fa-f-]{36}_"#,
+            options: .regularExpression
+        ) != nil
+
+        return looksLikeStagedFilename
+    }
+
+    private func shouldReplaceAlbum(_ value: String) -> Bool {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lowered = trimmed.lowercased()
+        return trimmed.isEmpty || lowered == "unknown album"
+    }
+
+    private func shouldReplaceGenre(_ value: String) -> Bool {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lowered = trimmed.lowercased()
+        return trimmed.isEmpty || lowered == "unknown genre" || lowered == "music"
+    }
+
+    private func isMeaningfulEmpty(_ value: String) -> Bool {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     func injectSongs() {
         guard !songs.isEmpty else { return }
         
@@ -800,7 +929,6 @@ struct MusicView: View {
         injectProgress = 0
         totalInjectCount = songs.count
         currentInjectIndex = 0
-        
         
         manager.startHeartbeat { success in
             guard success else {
@@ -811,7 +939,6 @@ struct MusicView: View {
                 return
             }
             
-            
             DispatchQueue.main.async {
                 self.startInjectionProcess()
             }
@@ -819,7 +946,6 @@ struct MusicView: View {
     }
     
     private func startInjectionProcess() {
-        
         let progressTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { timer in
             if self.injectProgress < 0.9 {
                 self.injectProgress += 0.02
@@ -831,11 +957,9 @@ struct MusicView: View {
         
         manager.injectSongs(songs: songsToInfect, progress: { progressText in
             DispatchQueue.main.async {
-                
                 if let range = progressText.range(of: #"(\d+)/\d+"#, options: .regularExpression),
                    let index = Int(progressText[range].split(separator: "/").first ?? "") {
                     self.currentInjectIndex = index
-                    
                     self.injectProgress = CGFloat(index) / CGFloat(self.totalInjectCount) * 0.9
                     
                     while lastProcessedIndex < index && !self.songs.isEmpty {
@@ -882,10 +1006,8 @@ struct MusicView: View {
             self.showToast = true
         }
         
-        
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.success)
-        
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
             withAnimation(.easeOut(duration: 0.5)) {
@@ -1245,7 +1367,6 @@ struct MusicView: View {
         showingDuplicateSheet = false
     }
 
-    
     func injectAsPlaylist(name: String? = nil, pid: Int64? = nil) {
         guard !songs.isEmpty else { return }
         if name == nil && pid == nil { return }
