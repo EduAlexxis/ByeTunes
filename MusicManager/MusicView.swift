@@ -12,6 +12,7 @@ struct MusicView: View {
         let pid: Int64
         var id: Int64 { pid }
     }
+    
     @State private var showingMusicPicker = false
     @State private var injectProgress: CGFloat = 0
     @State private var showPlaylistAlert = false
@@ -517,33 +518,37 @@ struct MusicView: View {
             
             func stageFile(_ sourceURL: URL) {
                 guard isSupportedAudio(sourceURL) else { return }
+                
                 let safeName = sourceURL.lastPathComponent
-                let ext = sourceURL.pathExtension.lowercased()
-                let stagedName = "\(UUID().uuidString)_\(safeName)"
-                let destURL = stagingDirectory.appendingPathComponent(stagedName)
+                let uniqueFolder = stagingDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+                let destURL = uniqueFolder.appendingPathComponent(safeName)
                 
                 do {
+                    try FileManager.default.createDirectory(at: uniqueFolder, withIntermediateDirectories: true)
                     try FileManager.default.copyItem(at: sourceURL, to: destURL)
                     stagedURLs.append(destURL)
                 } catch {
-                    skippedCount += 1
                     Task { @MainActor in
                         Logger.shared.log("[MusicView] Copy failed for \(safeName): \(error)")
                     }
-                    let fallbackURL = stagingDirectory.appendingPathComponent("\(UUID().uuidString)_\(sourceURL.deletingPathExtension().lastPathComponent).\(ext)")
+                    
                     if FileManager.default.fileExists(atPath: sourceURL.path) {
                         do {
+                            try FileManager.default.createDirectory(at: uniqueFolder, withIntermediateDirectories: true)
                             let data = try Data(contentsOf: sourceURL, options: [.mappedIfSafe])
-                            try data.write(to: fallbackURL, options: .atomic)
-                            stagedURLs.append(fallbackURL)
+                            try data.write(to: destURL, options: .atomic)
+                            stagedURLs.append(destURL)
                             Task { @MainActor in
                                 Logger.shared.log("[MusicView] Data fallback copy succeeded for \(safeName)")
                             }
                         } catch {
+                            skippedCount += 1
                             Task { @MainActor in
                                 Logger.shared.log("[MusicView] Data fallback copy failed for \(safeName): \(error)")
                             }
                         }
+                    } else {
+                        skippedCount += 1
                     }
                 }
             }
@@ -577,11 +582,15 @@ struct MusicView: View {
                     await Logger.shared.log("[MusicView] Fallback metadata used for \(localURL.lastPathComponent)")
                 }
                 
+                song = sanitizeImportedSong(song)
+                
                 song = await enrichSongWithSelectedMetadata(
                     song,
                     metadataSource: metadataSource,
                     autofetch: autofetch
                 )
+                
+                song = sanitizeImportedSong(song)
                 
                 let appleSubscriptionLyrics = UserDefaults.standard.bool(forKey: "appleSubscriptionLyrics")
                 if fetchLyrics && !appleSubscriptionLyrics && (song.lyrics == nil || song.lyrics?.isEmpty == true) {
@@ -599,6 +608,9 @@ struct MusicView: View {
             }
 
             do {
+                if FileManager.default.fileExists(atPath: stagingDirectory.path) {
+                    try? FileManager.default.removeItem(at: stagingDirectory)
+                }
                 try FileManager.default.createDirectory(at: stagingDirectory, withIntermediateDirectories: true)
             } catch {
                 Logger.shared.log("[MusicView] Failed to create staging directory: \(error)")
@@ -610,7 +622,11 @@ struct MusicView: View {
                     let accessGranted = url.startAccessingSecurityScopedResource()
                     defer { if accessGranted { url.stopAccessingSecurityScopedResource() } }
                     
-                    let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles])
+                    let enumerator = FileManager.default.enumerator(
+                        at: url,
+                        includingPropertiesForKeys: [.isRegularFileKey],
+                        options: [.skipsHiddenFiles]
+                    )
                     while let fileURL = enumerator?.nextObject() as? URL {
                         stageFile(fileURL)
                     }
@@ -876,6 +892,161 @@ struct MusicView: View {
         return result
     }
 
+    private func sanitizeImportedSong(_ song: SongMetadata) -> SongMetadata {
+        var cleaned = song
+
+        let rawFilename = song.localURL.deletingPathExtension().lastPathComponent
+        let normalizedFilename = normalizedImportedFilename(rawFilename)
+        let parsed = parseArtistAndTitle(from: normalizedFilename)
+
+        let cleanedTitle = stripLeadingImportGarbage(song.title)
+        let cleanedArtist = stripLeadingImportGarbage(song.artist)
+        let cleanedAlbum = stripLeadingImportGarbage(song.album)
+
+        if shouldReplaceTitle(cleanedTitle) || cleanedTitle == normalizedFilename {
+            cleaned.title = parsed.title ?? normalizedFilename
+        } else {
+            cleaned.title = cleanedTitle
+        }
+
+        if shouldReplaceArtist(cleanedArtist) {
+            cleaned.artist = parsed.artist ?? "Unknown Artist"
+        } else {
+            cleaned.artist = cleanedArtist
+        }
+
+        cleaned.album = shouldReplaceAlbum(cleanedAlbum) ? "Unknown Album" : cleanedAlbum
+        cleaned.genre = shouldReplaceGenre(song.genre) ? "Music" : stripLeadingImportGarbage(song.genre)
+
+        if let albumArtist = song.albumArtist {
+            let cleanedAlbumArtist = stripLeadingImportGarbage(albumArtist)
+            cleaned.albumArtist = shouldReplaceArtist(cleanedAlbumArtist) ? nil : cleanedAlbumArtist
+        }
+
+        if cleaned.trackNumber == nil, let parsedTrack = parsed.trackNumber {
+            cleaned.trackNumber = parsedTrack
+        }
+
+        return cleaned
+    }
+
+    private func normalizedImportedFilename(_ value: String) -> String {
+        var cleaned = value
+
+        cleaned = cleaned.replacingOccurrences(
+            of: #"^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}[_\-\s]+"#,
+            with: "",
+            options: .regularExpression
+        )
+
+        cleaned = cleaned.replacingOccurrences(
+            of: #"^\d{5,}[_\-\s]+"#,
+            with: "",
+            options: .regularExpression
+        )
+
+        cleaned = cleaned.replacingOccurrences(
+            of: #"\s*-\s*"#,
+            with: " - ",
+            options: .regularExpression
+        )
+
+        cleaned = cleaned.replacingOccurrences(
+            of: #"\s+"#,
+            with: " ",
+            options: .regularExpression
+        )
+
+        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func stripLeadingImportGarbage(_ value: String) -> String {
+        var cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        cleaned = cleaned.replacingOccurrences(
+            of: #"^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}[_\-\s]+"#,
+            with: "",
+            options: .regularExpression
+        )
+
+        cleaned = cleaned.replacingOccurrences(
+            of: #"^\d{5,}\s+"#,
+            with: "",
+            options: .regularExpression
+        )
+
+        cleaned = cleaned.replacingOccurrences(
+            of: #"\s+"#,
+            with: " ",
+            options: .regularExpression
+        )
+
+        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func parseArtistAndTitle(from filename: String) -> (artist: String?, title: String?, trackNumber: Int?) {
+        let parts = filename
+            .components(separatedBy: " - ")
+            .map { stripLeadingImportGarbage($0) }
+            .filter { !$0.isEmpty }
+
+        guard !parts.isEmpty else {
+            return (nil, nil, nil)
+        }
+
+        if parts.count >= 3, let trackNumber = Int(parts[0]), parts[0].count <= 3 {
+            let artist = stripLeadingImportGarbage(parts[1])
+            let title = stripLeadingImportGarbage(parts[2...].joined(separator: " - "))
+            return (
+                artist.isEmpty ? nil : artist,
+                title.isEmpty ? nil : title,
+                trackNumber
+            )
+        }
+
+        if parts.count == 2 {
+            let p1 = stripLeadingImportGarbage(parts[0])
+            let p2 = stripLeadingImportGarbage(parts[1])
+
+            if let trackNumber = Int(p1), p1.count <= 3 {
+                return (nil, p2.isEmpty ? nil : p2, trackNumber)
+            }
+
+            let p1Lower = p1.lowercased()
+            let p2Lower = p2.lowercased()
+
+            let p1LooksLikeTitle =
+                p1Lower.contains("official") ||
+                p1Lower.contains("audio") ||
+                p1Lower.contains("video") ||
+                p1Lower.contains("lyrics")
+
+            let p2LooksLikeTitle =
+                p2Lower.contains("official") ||
+                p2Lower.contains("audio") ||
+                p2Lower.contains("video") ||
+                p2Lower.contains("lyrics")
+
+            let p1LooksLikeArtist =
+                p1Lower.contains("feat") || p1Lower.contains("ft.") || p1.contains(",")
+
+            let p2LooksLikeArtist =
+                p2Lower.contains("feat") || p2Lower.contains("ft.") || p2.contains(",")
+
+            if p1LooksLikeTitle && !p2LooksLikeTitle {
+                return (p2.isEmpty ? nil : p2, p1.isEmpty ? nil : p1, nil)
+            }
+
+            if p2LooksLikeArtist && !p1LooksLikeArtist {
+                return (p2.isEmpty ? nil : p2, p1.isEmpty ? nil : p1, nil)
+            }
+
+            return (p1.isEmpty ? nil : p1, p2.isEmpty ? nil : p2, nil)
+        }
+
+        return (nil, filename.isEmpty ? nil : filename, nil)
+    }
+
     private func shouldReplaceTitle(_ value: String) -> Bool {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return true }
@@ -884,11 +1055,16 @@ struct MusicView: View {
         if lowered == "unknown title" { return true }
 
         let looksLikeStagedFilename = trimmed.range(
-            of: #"^[0-9A-Fa-f-]{36}_"#,
+            of: #"^[0-9A-Fa-f-]{36}[_\-\s]+"#,
             options: .regularExpression
         ) != nil
 
-        return looksLikeStagedFilename
+        let looksLikeNumericGarbage = trimmed.range(
+            of: #"^\d{5,}\s+\S+"#,
+            options: .regularExpression
+        ) != nil
+
+        return looksLikeStagedFilename || looksLikeNumericGarbage
     }
 
     private func shouldReplaceArtist(_ value: String) -> Bool {
@@ -899,11 +1075,16 @@ struct MusicView: View {
         if lowered == "unknown artist" { return true }
 
         let looksLikeStagedFilename = trimmed.range(
-            of: #"^[0-9A-Fa-f-]{36}_"#,
+            of: #"^[0-9A-Fa-f-]{36}[_\-\s]+"#,
             options: .regularExpression
         ) != nil
 
-        return looksLikeStagedFilename
+        let looksLikeNumericGarbage = trimmed.range(
+            of: #"^\d{5,}\s+\S+"#,
+            options: .regularExpression
+        ) != nil
+
+        return looksLikeStagedFilename || looksLikeNumericGarbage
     }
 
     private func shouldReplaceAlbum(_ value: String) -> Bool {
@@ -946,7 +1127,7 @@ struct MusicView: View {
     }
     
     private func startInjectionProcess() {
-        let progressTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { timer in
+        let progressTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
             if self.injectProgress < 0.9 {
                 self.injectProgress += 0.02
             }
@@ -1275,12 +1456,17 @@ struct MusicView: View {
     private func duplicateDisplayFilename(for song: SongMetadata) -> String {
         let originalName = song.localURL.deletingPathExtension().lastPathComponent
         let cleanedName = originalName.replacingOccurrences(
-            of: #"^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}_"#,
+            of: #"^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}[_\-\s]+"#,
+            with: "",
+            options: .regularExpression
+        )
+        let finalName = cleanedName.replacingOccurrences(
+            of: #"^\d{5,}[_\-\s]+"#,
             with: "",
             options: .regularExpression
         )
         let ext = song.localURL.pathExtension
-        return ext.isEmpty ? cleanedName : "\(cleanedName).\(ext)"
+        return ext.isEmpty ? finalName : "\(finalName).\(ext)"
     }
 
     private func detectDuplicates(incoming: [SongMetadata], existing: [SongMetadata]) -> [DuplicateCandidate] {
@@ -1392,7 +1578,7 @@ struct MusicView: View {
     }
 
     private func startPlaylistInjection(name: String?, pid: Int64?) {
-        let progressTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { timer in
+        let progressTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
             if self.injectProgress < 0.9 {
                 self.injectProgress += 0.02
             }
