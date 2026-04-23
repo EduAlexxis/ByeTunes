@@ -724,25 +724,63 @@ struct MusicView: View {
                     self.totalImportCount = importedSongIDs.count
                 }
 
-                for (index, songID) in importedSongIDs.enumerated() {
-                    guard let currentSong = await MainActor.run(body: {
-                        songs.first(where: { $0.id == songID })
-                    }) else {
-                        continue
-                    }
+                // For large imports, extract artwork in batches to control memory pressure.
+                // The database builder requires artworkData (not just the thumbnail preview)
+                // to write artwork records into the MediaLibrary database.
+                let batchSize = importedSongIDs.count > 250 ? 25 : 50
+                for batchStart in stride(from: 0, to: importedSongIDs.count, by: batchSize) {
+                    let batchEnd = min(batchStart + batchSize, importedSongIDs.count)
+                    let batch = Array(importedSongIDs[batchStart..<batchEnd])
 
-                    let previewData: Data?
-                    if let existingPreview = currentSong.artworkPreviewData {
-                        previewData = existingPreview
-                    } else {
-                        previewData = await SongMetadata.extractEmbeddedArtworkThumbnail(from: currentSong.localURL)
+                    await withTaskGroup(of: (id: UUID, artworkData: Data?, previewData: Data?).self) { group in
+                        for songID in batch {
+                            group.addTask {
+                                guard let currentSong = await MainActor.run(body: {
+                                    songs.first(where: { $0.id == songID })
+                                }) else {
+                                    return (id: songID, artworkData: nil, previewData: nil)
+                                }
+
+                                // Skip if artworkData is already populated from earlier enrichment
+                                if currentSong.artworkData != nil {
+                                    return (
+                                        id: songID,
+                                        artworkData: currentSong.artworkData,
+                                        previewData: currentSong.artworkPreviewData
+                                    )
+                                }
+
+                                let fullData: Data?
+                                let thumbData: Data?
+                                do {
+                                    // For very large imports, cap artwork at 800x800 to save memory
+                                    let maxDim: CGFloat = importedSongIDs.count > 250 ? 800 : 1200
+                                    (fullData, thumbData) = await SongMetadata.extractEmbeddedArtworkWithThumbnail(
+                                        from: currentSong.localURL,
+                                        maxDimension: maxDim,
+                                        thumbnailDimension: 120
+                                    )
+                                }
+                                return (id: songID, artworkData: fullData, previewData: thumbData)
+                            }
+                        }
+
+                        for await result in group {
+                            await MainActor.run {
+                                if let songIndex = songs.firstIndex(where: { $0.id == result.id }) {
+                                    if let artworkData = result.artworkData {
+                                        songs[songIndex].artworkData = artworkData
+                                    }
+                                    if let previewData = result.previewData {
+                                        songs[songIndex].artworkPreviewData = previewData
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     await MainActor.run {
-                        if let songIndex = songs.firstIndex(where: { $0.id == songID }) {
-                            songs[songIndex].artworkPreviewData = previewData
-                        }
-                        self.currentImportIndex = index + 1
+                        self.currentImportIndex = min(batchEnd, importedSongIDs.count)
                     }
                 }
             }

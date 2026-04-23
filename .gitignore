@@ -25,3 +25,6 @@ xcuserdata/
 MusicManager/idevice.h
 MusicManager/libidevice_ffi.a
 MusicManager/Bridging-Header.h
+
+# Build artifacts
+*.o

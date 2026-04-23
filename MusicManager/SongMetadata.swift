@@ -148,15 +148,12 @@ struct SongMetadata: Identifiable {
     
     static func fromURL(_ url: URL, includeArtwork: Bool = true) async throws -> SongMetadata {
         let asset = AVURLAsset(url: url)
-        
-        
+
         let duration = try await asset.load(.duration)
         let durationMs = Int(CMTimeGetSeconds(duration) * 1000)
-        
-        
+
         let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
-        
-        
+
         let filenameWithoutExt = url.deletingPathExtension().lastPathComponent
         var title = filenameWithoutExt
         var artist = "Unknown Artist"
@@ -165,13 +162,13 @@ struct SongMetadata: Identifiable {
         var genre = "Music"
         var year = Calendar.current.component(.year, from: Date())
         var artworkData: Data?
-        
+
         var trackNumber: Int?
         var trackCount: Int?
         var discNumber: Int?
         var discCount: Int?
         var lyrics: String?
-        
+
         let isM4A = url.pathExtension.lowercased() == "m4a"
         var storeId: Int64 = 0
         var storefrontId: Int64 = 0
@@ -183,9 +180,9 @@ struct SongMetadata: Identifiable {
         var copyright: String?
         var xid: String?
         var releaseDate: Int = 0
-        
-        
-        
+
+        // Wrap metadata extraction in autoreleasepool to prevent memory accumulation
+        // when processing hundreds of songs sequentially.
         let commonMetadata = try await asset.load(.commonMetadata)
 
         
@@ -531,6 +528,47 @@ struct SongMetadata: Identifiable {
     static func extractEmbeddedArtworkThumbnail(from url: URL, maxDimension: CGFloat = 120) async -> Data? {
         guard let fullData = await extractEmbeddedArtwork(from: url) else { return nil }
         return createArtworkThumbnailData(from: fullData, maxDimension: maxDimension)
+    }
+
+    /// Extracts both full-size artwork (capped at maxDimension) and a thumbnail in a single pass.
+    /// This avoids parsing metadata twice for large imports where memory pressure is a concern.
+    static func extractEmbeddedArtworkWithThumbnail(
+        from url: URL,
+        maxDimension: CGFloat = 1200,
+        thumbnailDimension: CGFloat = 120
+    ) async -> (artwork: Data?, thumbnail: Data?) {
+        guard let fullData = await extractEmbeddedArtwork(from: url) else {
+            return (nil, nil)
+        }
+
+        // Cap the "full" artwork to maxDimension to control memory for large imports
+        let cappedFullData: Data?
+        if maxDimension > 0,
+           let image = UIImage(data: fullData),
+           let cgImage = image.cgImage {
+            let largestDim = max(cgImage.width, cgImage.height)
+            if largestDim > Int(maxDimension) {
+                let scale = maxDimension / CGFloat(largestDim)
+                let targetSize = CGSize(
+                    width: max(CGFloat(cgImage.width) * scale, 1),
+                    height: max(CGFloat(cgImage.height) * scale, 1)
+                )
+                let format = UIGraphicsImageRendererFormat.default()
+                format.scale = 1
+                let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+                let rendered = renderer.image { _ in
+                    image.draw(in: CGRect(origin: .zero, size: targetSize))
+                }
+                cappedFullData = rendered.jpegData(compressionQuality: 0.92)
+            } else {
+                cappedFullData = fullData
+            }
+        } else {
+            cappedFullData = fullData
+        }
+
+        let thumbnailData = createArtworkThumbnailData(from: fullData, maxDimension: thumbnailDimension)
+        return (cappedFullData, thumbnailData)
     }
 
     private static func createArtworkThumbnailData(from data: Data, maxDimension: CGFloat) -> Data? {
