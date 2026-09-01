@@ -16,6 +16,19 @@ struct DeviceLibraryBrowserView: View {
         var id: String { rawValue }
     }
 
+    private enum SongSortOption: String, CaseIterable, Identifiable {
+        case titleAscending = "Title"
+        case artistAscending = "Artist"
+        case albumAscending = "Album"
+        case durationDescending = "Duration"
+        case yearDescending = "Year"
+        case fileSizeDescending = "File Size"
+
+        var id: String { rawValue }
+    }
+
+    private static let allGenresOption = "All Genres"
+
     private struct ArtistEntry: Identifiable {
         let name: String
         let songs: [DeviceManager.ExportableSongInfo]
@@ -57,6 +70,9 @@ struct DeviceLibraryBrowserView: View {
     @State private var searchText = ""
     @State private var selectedIDs = Set<String>()
     @State private var isSelectionMode = false
+    @State private var sortOption: SongSortOption = .titleAscending
+    @State private var selectedGenre: String = DeviceLibraryBrowserView.allGenresOption
+    @State private var showingBatchDeleteSongsConfirm = false
     @State private var selectedPlaylistPids = Set<Int64>()
     @State private var showingDeletePlaylistsConfirm = false
     @State private var isLoading = true
@@ -103,12 +119,41 @@ struct DeviceLibraryBrowserView: View {
     private var controlFillColor: Color { Color(.systemBackground) }
 
     private var filteredSongs: [DeviceManager.ExportableSongInfo] {
+        let genreFiltered = selectedGenre == Self.allGenresOption
+            ? songs
+            : songs.filter { $0.genre == selectedGenre }
+
         let trimmed = normalizedSearchText
-        guard !trimmed.isEmpty else { return songs }
-        return songs.filter { song in
+        guard !trimmed.isEmpty else { return genreFiltered }
+        return genreFiltered.filter { song in
             let haystack = "\(song.artist) \(song.title) \(song.album)"
                 .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
             return haystack.localizedCaseInsensitiveContains(trimmed)
+        }
+    }
+
+    private var availableGenres: [String] {
+        let genres = Set(
+            songs.map { $0.genre.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        )
+        return genres.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    private var sortedFilteredSongsFlat: [DeviceManager.ExportableSongInfo] {
+        switch sortOption {
+        case .titleAscending:
+            return filteredSongs.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        case .artistAscending:
+            return filteredSongs.sorted { $0.artist.localizedCaseInsensitiveCompare($1.artist) == .orderedAscending }
+        case .albumAscending:
+            return filteredSongs.sorted { $0.album.localizedCaseInsensitiveCompare($1.album) == .orderedAscending }
+        case .durationDescending:
+            return filteredSongs.sorted { $0.durationMs > $1.durationMs }
+        case .yearDescending:
+            return filteredSongs.sorted { $0.year > $1.year }
+        case .fileSizeDescending:
+            return filteredSongs.sorted { $0.fileSize > $1.fileSize }
         }
     }
 
@@ -127,6 +172,10 @@ struct DeviceLibraryBrowserView: View {
     }
 
     private func computeGroupedSongs() -> [(key: String, songs: [DeviceManager.ExportableSongInfo])] {
+        guard sortOption == .titleAscending else {
+            return [(key: "", songs: sortedFilteredSongsFlat)]
+        }
+
         let grouped = Dictionary(grouping: filteredSongs) { song in
             let first = song.title
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -374,6 +423,14 @@ struct DeviceLibraryBrowserView: View {
         } message: {
             Text(songPendingDeletion.map { "Delete \($0.title) from the device library?" } ?? "")
         }
+        .alert("Delete Songs?", isPresented: $showingBatchDeleteSongsConfirm) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                deleteSelectedSongs()
+            }
+        } message: {
+            Text("Delete \(selectedIDs.count) song\(selectedIDs.count == 1 ? "" : "s") from the device library? This can't be undone.")
+        }
         .alert("Delete Playlists?", isPresented: $showingDeletePlaylistsConfirm) {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
@@ -389,6 +446,12 @@ struct DeviceLibraryBrowserView: View {
             prefetchArtworkForCurrentMode()
         }
         .onChange(of: searchText) { _ in
+            recomputeLibraryGroupings()
+        }
+        .onChange(of: sortOption) { _ in
+            recomputeLibraryGroupings()
+        }
+        .onChange(of: selectedGenre) { _ in
             recomputeLibraryGroupings()
         }
     }
@@ -511,6 +574,12 @@ struct DeviceLibraryBrowserView: View {
                             ) {
                                 showingAddToAlbumSheet = true
                             }
+                        } else {
+                            sortMenu
+
+                            if availableGenres.count > 1 {
+                                genreFilterMenu
+                            }
                         }
 
                         actionCapsule(
@@ -520,6 +589,18 @@ struct DeviceLibraryBrowserView: View {
                             isDisabled: selectedIDs.isEmpty || isLoading || isExporting
                         ) {
                             exportSelectedSongs()
+                        }
+
+                        if isSelectionMode {
+                            actionCapsule(
+                                title: "Delete",
+                                systemImage: "trash",
+                                isPrimary: false,
+                                isDestructive: true,
+                                isDisabled: selectedIDs.isEmpty || isLoading || isExporting
+                            ) {
+                                showingBatchDeleteSongsConfirm = true
+                            }
                         }
                     }
                     .padding(.horizontal, 2)
@@ -621,11 +702,13 @@ struct DeviceLibraryBrowserView: View {
             case .songs:
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(cachedGroupedSongs, id: \.key) { section in
-                        Text(section.key)
-                            .font(.headline.weight(.semibold))
-                            .foregroundStyle(strongTextColor)
-                            .padding(.top, section.key == cachedGroupedSongs.first?.key ? 2 : 18)
-                            .padding(.bottom, 8)
+                        if !section.key.isEmpty {
+                            Text(section.key)
+                                .font(.headline.weight(.semibold))
+                                .foregroundStyle(strongTextColor)
+                                .padding(.top, section.key == cachedGroupedSongs.first?.key ? 2 : 18)
+                                .padding(.bottom, 8)
+                        }
 
                         ForEach(Array(section.songs.enumerated()), id: \.element.id) { index, song in
                             songRow(song)
@@ -1107,6 +1190,90 @@ struct DeviceLibraryBrowserView: View {
         .opacity(isDisabled ? 0.45 : 1)
     }
 
+    private var sortMenu: some View {
+        Menu {
+            ForEach(SongSortOption.allCases) { option in
+                Button {
+                    sortOption = option
+                } label: {
+                    if sortOption == option {
+                        Label(option.rawValue, systemImage: "checkmark")
+                    } else {
+                        Text(option.rawValue)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.up.arrow.down")
+                    .font(.system(size: 14, weight: .semibold))
+                Text("Sort: \(sortOption.rawValue)")
+                    .font(.system(size: 15, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(strongTextColor)
+            .padding(.horizontal, 20)
+            .frame(height: 48)
+            .background(
+                Capsule()
+                    .fill(controlFillColor)
+                    .overlay(
+                        Capsule()
+                            .stroke(hairlineColor, lineWidth: 1)
+                    )
+            )
+        }
+        .disabled(isLoading || filteredSongs.isEmpty)
+        .opacity(isLoading || filteredSongs.isEmpty ? 0.45 : 1)
+    }
+
+    private var genreFilterMenu: some View {
+        Menu {
+            Button {
+                selectedGenre = Self.allGenresOption
+            } label: {
+                if selectedGenre == Self.allGenresOption {
+                    Label(Self.allGenresOption, systemImage: "checkmark")
+                } else {
+                    Text(Self.allGenresOption)
+                }
+            }
+
+            ForEach(availableGenres, id: \.self) { genre in
+                Button {
+                    selectedGenre = genre
+                } label: {
+                    if selectedGenre == genre {
+                        Label(genre, systemImage: "checkmark")
+                    } else {
+                        Text(genre)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "line.3.horizontal.decrease.circle")
+                    .font(.system(size: 14, weight: .semibold))
+                Text(selectedGenre == Self.allGenresOption ? "Genre" : selectedGenre)
+                    .font(.system(size: 15, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(selectedGenre == Self.allGenresOption ? strongTextColor : Color.accentColor)
+            .padding(.horizontal, 20)
+            .frame(height: 48)
+            .background(
+                Capsule()
+                    .fill(controlFillColor)
+                    .overlay(
+                        Capsule()
+                            .stroke(selectedGenre == Self.allGenresOption ? hairlineColor : Color.accentColor, lineWidth: 1)
+                    )
+            )
+        }
+        .disabled(isLoading)
+        .opacity(isLoading ? 0.45 : 1)
+    }
+
     private var summaryCountText: String {
         switch libraryMode {
         case .songs:
@@ -1272,6 +1439,9 @@ struct DeviceLibraryBrowserView: View {
         manager.fetchExportableSongs { result in
             DispatchQueue.main.async {
                 songs = result
+                if selectedGenre != Self.allGenresOption && !availableGenres.contains(selectedGenre) {
+                    selectedGenre = Self.allGenresOption
+                }
                 recomputeLibraryGroupings()
                 selectedIDs = selectedIDs.intersection(Set(result.map(\.id)))
                 if result.isEmpty {
@@ -1792,6 +1962,25 @@ struct DeviceLibraryBrowserView: View {
                     if selectedIDs.isEmpty {
                         isSelectionMode = false
                     }
+                    refreshSongs()
+                }
+            }
+        }
+    }
+
+    private func deleteSelectedSongs() {
+        let items = selectedSongs
+        guard !items.isEmpty else { return }
+
+        isLoading = true
+        statusMessage = ""
+        manager.deleteExportableSongs(items) { success, message in
+            DispatchQueue.main.async {
+                isLoading = false
+                statusMessage = message
+                if success {
+                    selectedIDs.subtract(items.map(\.id))
+                    isSelectionMode = false
                     refreshSongs()
                 }
             }

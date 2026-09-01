@@ -3502,6 +3502,93 @@ class DeviceManager: ObservableObject {
         }
     }
 
+    func deleteExportableSongs(_ songsToDelete: [ExportableSongInfo], completion: @escaping (Bool, String) -> Void) {
+        guard !songsToDelete.isEmpty else {
+            completion(false, "No songs to delete.")
+            return
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard self.ensureActiveTransport(reason: "deleting songs from the device library") else {
+                completion(false, "Device connection unavailable.")
+                return
+            }
+
+            guard let context = self.stageCurrentMediaLibraryForMutation(label: "delete_songs") else {
+                completion(false, "Could not stage MediaLibrary.sqlitedb.")
+                return
+            }
+            defer { try? FileManager.default.removeItem(at: context.tempDir) }
+
+            var db: OpaquePointer?
+            guard sqlite3_open(context.dbURL.path, &db) == SQLITE_OK else {
+                if db != nil { sqlite3_close(db) }
+                completion(false, "Could not open MediaLibrary.sqlitedb.")
+                return
+            }
+
+            var deletedCount = 0
+            var success = true
+
+            _ = self.sqliteExec(db, "BEGIN IMMEDIATE TRANSACTION")
+
+            for song in songsToDelete {
+                let remotePath = "\(context.musicDir)/\(song.remoteFilename)"
+                let deleteSem = DispatchSemaphore(value: 0)
+                var remoteDeleted = false
+                self.removeFileFromDevice(remotePath: remotePath) { ok in
+                    remoteDeleted = ok
+                    deleteSem.signal()
+                }
+                deleteSem.wait()
+
+                guard remoteDeleted else { continue }
+
+                let itemPid = song.itemPid > 0 ? song.itemPid : (self.itemPid(forRemoteFilename: song.remoteFilename, db: db) ?? 0)
+                guard itemPid > 0 else { continue }
+
+                let rowSuccess = [
+                    "DELETE FROM item WHERE item_pid = \(itemPid)",
+                    "DELETE FROM item_extra WHERE item_pid = \(itemPid)",
+                    "DELETE FROM item_playback WHERE item_pid = \(itemPid)",
+                    "DELETE FROM item_stats WHERE item_pid = \(itemPid)",
+                    "DELETE FROM item_store WHERE item_pid = \(itemPid)",
+                    "DELETE FROM item_video WHERE item_pid = \(itemPid)",
+                    "DELETE FROM item_search WHERE item_pid = \(itemPid)",
+                    "DELETE FROM lyrics WHERE item_pid = \(itemPid)",
+                    "DELETE FROM chapter WHERE item_pid = \(itemPid)",
+                    "DELETE FROM artwork_token WHERE entity_pid = \(itemPid)",
+                    "DELETE FROM best_artwork_token WHERE entity_pid = \(itemPid)"
+                ].allSatisfy { self.sqliteExec(db, $0) }
+
+                if rowSuccess {
+                    deletedCount += 1
+                } else {
+                    success = false
+                }
+            }
+
+            _ = self.sqliteExec(db, success ? "COMMIT" : "ROLLBACK")
+            _ = self.sqliteExec(db, "PRAGMA wal_checkpoint(TRUNCATE)")
+            _ = self.sqliteExec(db, "PRAGMA journal_mode=DELETE")
+            sqlite3_close(db)
+
+            guard success, deletedCount > 0 else {
+                completion(false, "Could not delete the selected songs.")
+                return
+            }
+
+            guard self.commitStagedMediaLibrary(localDbURL: context.dbURL) else {
+                completion(false, "Failed to upload the updated device library.")
+                return
+            }
+
+            completion(true, deletedCount == songsToDelete.count
+                ? "Deleted \(deletedCount) song\(deletedCount == 1 ? "" : "s")."
+                : "Deleted \(deletedCount) of \(songsToDelete.count) song(s).")
+        }
+    }
+
     func updateExportableSongMetadata(
         original: ExportableSongInfo,
         updatedSong: SongMetadata,
