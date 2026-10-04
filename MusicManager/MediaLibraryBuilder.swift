@@ -624,6 +624,16 @@ class MediaLibraryBuilder {
     
 
     
+    private static func fileDateAdded(for url: URL) -> Int? {
+        guard let values = try? url.resourceValues(forKeys: [.creationDateKey, .contentModificationDateKey]) else {
+            return nil
+        }
+        guard let date = values.creationDate ?? values.contentModificationDate else {
+            return nil
+        }
+        return Int(date.timeIntervalSince1970)
+    }
+
     @discardableResult
     private static func insertSongsWithExisting(
         db: OpaquePointer?,
@@ -782,6 +792,8 @@ class MediaLibraryBuilder {
             let dbTrackCount = song.trackCount ?? 1
             let dbDiscNum = song.discNumber ?? 1
             let dbDiscCount = song.discCount ?? 1
+
+            let dateAdded = fileDateAdded(for: song.localURL) ?? now
             
             
             
@@ -817,7 +829,7 @@ class MediaLibraryBuilder {
                     \(dbDiscNum), \(dbTrackNum), 1,
                     3840, 0,
                     0, 1, 2, 0, 0,
-                    1, 0, \(now), 0, 0, \(now), 0
+                    1, 0, \(dateAdded), 0, 0, \(dateAdded), 0
                 )
             """)
             

@@ -161,6 +161,7 @@ class DeviceManager: ObservableObject {
     private var lastHeartbeatAttemptStartedAt: Date = .distantPast
     private let autoReconnectCheckInterval: TimeInterval = 2
     private let staleHeartbeatAttemptInterval: TimeInterval = 6
+    private let heartbeatEstablishTimeout: TimeInterval = 20
     
     private var lastLoggedStatus: [String: String] = [:]
     
@@ -730,21 +731,28 @@ class DeviceManager: ObservableObject {
                 outcomeSemaphore.signal()
             }
 
-            if outcomeSemaphore.wait(timeout: .now() + 20) == .timedOut {
-                Logger.shared.log("[DeviceManager] Heartbeat establishment timed out after 20s; treating as failed.")
+            if outcomeSemaphore.wait(timeout: .now() + self.heartbeatEstablishTimeout) == .timedOut {
+                Logger.shared.log("[DeviceManager] Heartbeat establishment timed out after \(Int(self.heartbeatEstablishTimeout))s; treating as failed.")
                 reportOutcome(success: false)
             }
         }
         heartbeatThread?.name = "HeartbeatThread"
         heartbeatThread?.start()
 
+        let sessionIDForPoll = heartbeatSessionID
         DispatchQueue.global().async {
-            for _ in 0..<20 {
+            let pollInterval: TimeInterval = 0.5
+            let maxIterations = Int((self.heartbeatEstablishTimeout + 2) / pollInterval)
+            for _ in 0..<maxIterations {
                 if self.heartbeatReady && self.hasActiveTransport {
                     DispatchQueue.main.async { finish(true) }
                     return
                 }
-                Thread.sleep(forTimeInterval: 0.5)
+                guard sessionIDForPoll == self.heartbeatSessionID else {
+                    DispatchQueue.main.async { finish(false) }
+                    return
+                }
+                Thread.sleep(forTimeInterval: pollInterval)
             }
             DispatchQueue.main.async { finish(false) }
         }
@@ -838,6 +846,7 @@ class DeviceManager: ObservableObject {
             if poloErr == IdeviceSuccess {
                 consecutivePoloFailures = 0
                 DispatchQueue.main.async {
+                    guard sessionID == self.heartbeatSessionID else { return }
                     if !self.heartbeatReady {
                         self.heartbeatReady = true
                         self.connectionStatus = "Connected"
@@ -2375,8 +2384,7 @@ class DeviceManager: ObservableObject {
         SELECT item_extra.location
         FROM item
         INNER JOIN item_extra ON item.item_pid = item_extra.item_pid
-        WHERE item.base_location_id = 3840
-          AND item.media_type = 8
+        WHERE item.media_type = 8
           AND item_extra.location != ''
         """
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
@@ -3190,19 +3198,33 @@ class DeviceManager: ObservableObject {
             }
 
             var onDeviceFiles = Set<String>()
-            let musicDir = self.resolvePrimaryMusicDirectory()
-            let semFiles = DispatchSemaphore(value: 0)
-            self.listFiles(remotePath: musicDir) { files in
-                if let files {
-                    onDeviceFiles = Set(files)
-                }
-                semFiles.signal()
+            let musicRoot = "/iTunes_Control/Music"
+            var musicSubfolders: [String] = []
+            let semTop = DispatchSemaphore(value: 0)
+            self.listFiles(remotePath: musicRoot) { entries in
+                musicSubfolders = (entries ?? []).filter { $0.hasPrefix("F") }
+                semTop.signal()
             }
-            semFiles.wait()
+            semTop.wait()
+
+            if musicSubfolders.isEmpty {
+                musicSubfolders = [(self.resolvePrimaryMusicDirectory() as NSString).lastPathComponent]
+            }
+
+            for name in musicSubfolders {
+                let semFiles = DispatchSemaphore(value: 0)
+                self.listFiles(remotePath: "\(musicRoot)/\(name)") { files in
+                    if let files {
+                        onDeviceFiles.formUnion(files)
+                    }
+                    semFiles.signal()
+                }
+                semFiles.wait()
+            }
 
             let metadataMap = self.carrySongMetadataMapFromDatabase(stagedDbURL)
             let dbFilenames = self.musicFilenamesFromDatabase(stagedDbURL)
-            Logger.shared.log("[Export] DB lists \(dbFilenames.count) song filename(s); on-device listing at \(musicDir) returned \(onDeviceFiles.count) file(s)")
+            Logger.shared.log("[Export] DB lists \(dbFilenames.count) song filename(s); on-device listing across \(musicSubfolders.count) folder(s) returned \(onDeviceFiles.count) file(s)")
             let songs = dbFilenames
                 .filter { onDeviceFiles.contains($0) }
                 .map { filename -> ExportableSongInfo in
@@ -3728,6 +3750,7 @@ class DeviceManager: ObservableObject {
                 return
             }
 
+            var artworkUploadFailed = false
             if let artworkData = updatedSong.artworkData,
                !artworkData.isEmpty,
                let relativePath = original.artworkRelativePath,
@@ -3736,8 +3759,10 @@ class DeviceManager: ObservableObject {
                 self.connectAfcClient(&afc)
                 if let afc {
                     let remoteArtworkPath = "/iTunes_Control/iTunes/Artwork/Originals/\(relativePath)"
-                    _ = self.uploadDataToDevice(artworkData, remotePath: remoteArtworkPath, afc: afc, verify: false)
+                    artworkUploadFailed = !self.replaceRemoteFileAtomically(artworkData, remotePath: remoteArtworkPath, afc: afc)
                     afc_client_free(afc)
+                } else {
+                    artworkUploadFailed = true
                 }
             }
 
@@ -3746,7 +3771,11 @@ class DeviceManager: ObservableObject {
                 return
             }
 
-            completion(true, "Updated metadata for \(safeTitle).")
+            if artworkUploadFailed {
+                completion(true, "Updated metadata for \(safeTitle), but artwork failed to upload.")
+            } else {
+                completion(true, "Updated metadata for \(safeTitle).")
+            }
         }
     }
 
@@ -4025,7 +4054,7 @@ class DeviceManager: ObservableObject {
                     for original in originals {
                         guard let relativePath = original.artworkRelativePath, !relativePath.isEmpty else { continue }
                         let remoteArtworkPath = "/iTunes_Control/iTunes/Artwork/Originals/\(relativePath)"
-                        if !self.uploadDataToDevice(artworkData, remotePath: remoteArtworkPath, afc: afc, verify: false) {
+                        if !self.replaceRemoteFileAtomically(artworkData, remotePath: remoteArtworkPath, afc: afc) {
                             artworkUploadFailureCount += 1
                         }
                     }
@@ -5781,9 +5810,26 @@ class DeviceManager: ObservableObject {
             return false
         }
     }
-    
-    
-    
+
+    private func replaceRemoteFileAtomically(_ data: Data, remotePath: String, afc: AfcClientHandle?) -> Bool {
+        let tempPath = remotePath + ".tmp"
+        _ = afc_remove_path(afc, tempPath)
+
+        guard uploadDataToDevice(data, remotePath: tempPath, afc: afc, verify: true) else {
+            _ = afc_remove_path(afc, tempPath)
+            return false
+        }
+
+        let renameErr = afc_rename_path(afc, tempPath, remotePath)
+        guard renameErr == nil else {
+            Logger.shared.log("[DeviceManager] ERROR: Failed to activate replacement file at \(remotePath)")
+            _ = afc_remove_path(afc, tempPath)
+            return false
+        }
+
+        return true
+    }
+
     enum DirectoryListResult {
         case files([String])
         case confirmedMissing
