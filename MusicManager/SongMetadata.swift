@@ -465,7 +465,7 @@ struct SongMetadata: Identifiable {
                         parsed.artist = value
                     case "ALBUM":
                         parsed.album = value
-                    case "ALBUMARTIST", "ALBUM ARTIST":
+                    case "ALBUMARTIST", "ALBUM ARTIST", "ALBUM_ARTIST":
                         parsed.albumArtist = value
                     case "GENRE":
                         parsed.genre = value
@@ -631,6 +631,8 @@ struct SongMetadata: Identifiable {
             
             let identifier = item.identifier?.rawValue ?? ""
             let combined = "\(identifier)|\(keyString)".uppercased()
+            let compactKey = combined.filter { $0.isLetter || $0.isNumber }
+            let isAlbumArtistKey = compactKey.contains("ALBUMARTIST") || combined.contains("TPE2") || combined.contains("AART")
             
             if isM4A {
                 let id = identifier
@@ -746,12 +748,12 @@ struct SongMetadata: Identifiable {
                 }
                 
                 if (combined.contains("TITLE") || combined.contains("NAM")) && title == effectiveFilenameWithoutExt { title = val }
-                if (combined.contains("ARTIST") || combined.contains("PERFORMER")) && !combined.contains("ALBUMARTIST") && artist == "Unknown Artist" { artist = val }
-                if combined.contains("ALBUM") && !combined.contains("ALBUMARTIST") && album == "Unknown Album" { album = val }
+                if (combined.contains("ARTIST") || combined.contains("PERFORMER")) && !isAlbumArtistKey && artist == "Unknown Artist" { artist = val }
+                if combined.contains("ALBUM") && !isAlbumArtistKey && album == "Unknown Album" { album = val }
                 if (combined.contains("GENRE") || combined.contains("GEN")) && genre == "Music" { genre = val }
                 
                 
-                if (combined.contains("ALBUMARTIST") || combined.contains("TPE2") || combined.contains("AART")) {
+                if isAlbumArtistKey {
                    let trimmed = val.trimmingCharacters(in: .whitespacesAndNewlines)
                    if !trimmed.isEmpty && trimmed.lowercased() != "unknown artist" {
                        albumArtist = trimmed
