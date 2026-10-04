@@ -2180,7 +2180,7 @@ extension SongMetadata {
         Logger.shared.log("[SongMetadata] Performing full Apple Music fetch for: \(song.artist) - \(song.title)")
         let query = "\(song.artist) \(song.title)"
 
-        if let amsMatch = await AppleMusicAPI.shared.searchSong(query: query, albumHint: song.album) {
+        if let amsMatch = await AppleMusicAPI.shared.searchSong(query: query, albumHint: song.album, titleHint: song.title) {
             let enriched = await applyAppleMusicMatch(amsMatch, to: song)
             Logger.shared.log("[SongMetadata] ✓ Apple Music match (\(enriched.appleMetadataMatchTier)): \(enriched.title) (\(enriched.storeId))")
             return enriched
@@ -2207,7 +2207,7 @@ extension SongMetadata {
         let query = "\(song.artist) \(song.title)"
         Logger.shared.log("[SongMetadata] 🔍 Shadow-searching Apple Music for rich metadata: '\(query)'")
 
-        if let amsMatch = await AppleMusicAPI.shared.searchSong(query: query, albumHint: song.album) {
+        if let amsMatch = await AppleMusicAPI.shared.searchSong(query: query, albumHint: song.album, titleHint: song.title) {
             Logger.shared.log("[SongMetadata] ✨ Found Apple Music Server Match: \(amsMatch.attributes.name) by \(amsMatch.attributes.artistName) (ID: \(amsMatch.id))")
             let enriched = await applyAppleMusicMatch(amsMatch, to: song)
             Logger.shared.log("[SongMetadata] ✨ Rich Apple metadata tier: \(enriched.appleMetadataMatchTier) for \(enriched.title)")
@@ -2796,15 +2796,19 @@ actor AppleMusicAPI {
         return await searchSongsViaPublicSearch(query: query, limit: limit, offset: offset)
     }
 
-    func searchSong(query: String, albumHint: String? = nil) async -> AppleMusicSong? {
+    func searchSong(query: String, albumHint: String? = nil, titleHint: String? = nil) async -> AppleMusicSong? {
+        let hasAlbumHint = albumHint.map { !$0.isEmpty && $0 != "Unknown Album" } ?? false
+        let hasTitleHint = titleHint.map { !Self.titleKey($0).isEmpty } ?? false
         let candidates: [AppleMusicSong]
-        if let albumHint, !albumHint.isEmpty, albumHint != "Unknown Album" {
+        if hasTitleHint {
+            candidates = await searchSongs(query: query, limit: 10, offset: 0)
+        } else if hasAlbumHint {
             candidates = await searchSongs(query: query, limit: 5, offset: 0)
         } else {
             candidates = await searchSongs(query: query, limit: 1, offset: 0)
         }
 
-        guard let song = Self.bestMatch(for: candidates, albumHint: albumHint) else {
+        guard let song = Self.bestMatch(for: candidates, albumHint: albumHint, titleHint: titleHint) else {
             return nil
         }
 
@@ -2819,13 +2823,40 @@ actor AppleMusicAPI {
         return song
     }
 
-    private static func bestMatch(for candidates: [AppleMusicSong], albumHint: String?) -> AppleMusicSong? {
+    private static func titleKey(_ value: String) -> String {
+        value
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
+            .lowercased()
+            .replacingOccurrences(of: #"\([^)]*\)|\[[^\]]*\]"#, with: " ", options: .regularExpression)
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
+    private static func bestMatch(for candidates: [AppleMusicSong], albumHint: String?, titleHint: String?) -> AppleMusicSong? {
+        let hintKey = titleHint.map { titleKey($0) } ?? ""
+        var pool = candidates
+
+        if !hintKey.isEmpty {
+            let exact = candidates.filter { titleKey($0.attributes.name) == hintKey }
+            if !exact.isEmpty {
+                pool = exact
+            } else {
+                let loose = candidates.filter { candidate in
+                    let key = titleKey(candidate.attributes.name)
+                    return !key.isEmpty && (key.contains(hintKey) || hintKey.contains(key))
+                }
+                guard !loose.isEmpty else { return nil }
+                pool = loose
+            }
+        }
+
         guard let albumHint, !albumHint.isEmpty, albumHint != "Unknown Album" else {
-            return candidates.first
+            return pool.first
         }
 
         let normalizedHint = albumHint.lowercased().filter { !$0.isPunctuation }
-        if let albumMatch = candidates.first(where: { candidate in
+        if let albumMatch = pool.first(where: { candidate in
             guard let candidateAlbum = candidate.attributes.albumName else { return false }
             let normalizedCandidate = candidateAlbum.lowercased().filter { !$0.isPunctuation }
             return normalizedCandidate.contains(normalizedHint) || normalizedHint.contains(normalizedCandidate)
@@ -2833,7 +2864,7 @@ actor AppleMusicAPI {
             return albumMatch
         }
 
-        return candidates.first
+        return pool.first
     }
 
     func fetchSong(id: String, urlHint: String? = nil) async -> AppleMusicSong? {
