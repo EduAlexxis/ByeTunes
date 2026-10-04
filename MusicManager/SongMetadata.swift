@@ -633,6 +633,7 @@ struct SongMetadata: Identifiable {
             let combined = "\(identifier)|\(keyString)".uppercased()
             let compactKey = combined.filter { $0.isLetter || $0.isNumber }
             let isAlbumArtistKey = compactKey.contains("ALBUMARTIST") || combined.contains("TPE2") || combined.contains("AART")
+            let isAlbumKey = compactKey.contains("ALBUM")
             
             if isM4A {
                 let id = identifier
@@ -747,7 +748,7 @@ struct SongMetadata: Identifiable {
                      if genre == "Music" { genre = val }
                 }
                 
-                if (combined.contains("TITLE") || combined.contains("NAM")) && title == effectiveFilenameWithoutExt { title = val }
+                if (combined.contains("TITLE") || combined.contains("NAM")) && !isAlbumKey && title == effectiveFilenameWithoutExt { title = val }
                 if (combined.contains("ARTIST") || combined.contains("PERFORMER")) && !isAlbumArtistKey && artist == "Unknown Artist" { artist = val }
                 if combined.contains("ALBUM") && !isAlbumArtistKey && album == "Unknown Album" { album = val }
                 if (combined.contains("GENRE") || combined.contains("GEN")) && genre == "Music" { genre = val }
