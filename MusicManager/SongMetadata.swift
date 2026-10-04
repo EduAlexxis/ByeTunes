@@ -3145,7 +3145,7 @@ actor AppleMusicAPI {
     private func fetchPublicSearchSection(query: String, title: String) async -> [PublicSearchItem] {
         let region = UserDefaults.standard.string(forKey: "storeRegion")?.lowercased() ?? "us"
         var components = URLComponents(string: "https://music.apple.com/\(region)/search")!
-        components.queryItems = [URLQueryItem(name: "term", value: query)]
+        components.queryItems = [URLQueryItem(name: "term", value: query), URLQueryItem(name: "l", value: "en")]
         guard let url = components.url else { return [] }
 
         var request = URLRequest(url: url)
