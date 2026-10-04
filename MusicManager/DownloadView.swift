@@ -1868,6 +1868,7 @@ enum DownloadError: LocalizedError {
     case invalidURL(String)
     case searchFailed
     case mappingFailed(String)
+    case trackNotFound
     case remoteFailure(String)
     case httpError(Int, String)
     case emptyResponse
@@ -1878,6 +1879,7 @@ enum DownloadError: LocalizedError {
         case .invalidURL: return "Invalid download URL."
         case .searchFailed: return "Search failed."
         case .mappingFailed(let message): return message
+        case .trackNotFound: return "No downloadable match was found for this track."
         case .remoteFailure(let text): return "Backend failure: \(text)"
         case .httpError(let code, let body): return "HTTP \(code): \(body)"
         case .emptyResponse: return "Backend returned empty response."
@@ -3425,13 +3427,6 @@ final class DownloadViewModel: ObservableObject {
         }
     }
 
-    private func resolveMappedDirectLink(from sourceURL: String, platform: DownloadPlatform) async -> DirectLinkKind? {
-        guard let mappedURL = try? await fetchMappedURL(for: sourceURL, platform: platform) else {
-            return nil
-        }
-        return parseDirectLink(from: mappedURL)
-    }
-
     private func makeAppleMusicTrack(
         from item: AppleMusicAPI.AppleMusicSong,
         sourceURLOverride: String? = nil,
@@ -4308,22 +4303,22 @@ final class DownloadViewModel: ObservableObject {
             }
         }
 
-        if resolvedSource.platform != .spotify {
-            log("Attempting last-resort Spotify mapping for \(track.name)...")
-            do {
-                let seed = mappingSeedURL(for: track.sourceURL)
-                let spotifyURL = try await fetchMappedURL(for: seed, platform: .spotify)
-                log("Mapped to Spotify for last-resort retry: \(spotifyURL)")
-
-                let spotifySource = DownloadSourceChoice(
-                    platform: .spotify,
-                    url: spotifyURL,
-                    backendGenreSource: DownloadPlatform.spotify.backendGenreSource
+        if resolvedSource.platform != .deezer {
+            log("Attempting last-resort Deezer mapping for \(track.name)...")
+            let deezerURL = await mapTrackToDeezerURL(track)
+            if deezerURL == nil && resolvedSource.platform == .appleMusic {
+                throw DownloadError.trackNotFound
+            }
+            if let deezerURL {
+                let deezerSource = DownloadSourceChoice(
+                    platform: .deezer,
+                    url: deezerURL,
+                    backendGenreSource: DownloadPlatform.deezer.backendGenreSource
                 )
-                let spotifyCandidates = try await primaryCandidates(for: spotifySource, track: track)
-                if !spotifyCandidates.isEmpty {
+                let deezerCandidates = try await primaryCandidates(for: deezerSource, track: track)
+                if !deezerCandidates.isEmpty {
                     if let outcome = try await executeCandidatesUntilSuccess(
-                        spotifyCandidates,
+                        deezerCandidates,
                         trackID: track.id,
                         suggestedName: "\(track.artistLine) - \(track.name)",
                         fallbackExtension: "flac"
@@ -4331,8 +4326,6 @@ final class DownloadViewModel: ObservableObject {
                         return outcome
                     }
                 }
-            } catch {
-                log("Last-resort Spotify mapping failed: \(error.localizedDescription)")
             }
         }
 
@@ -4367,19 +4360,12 @@ final class DownloadViewModel: ObservableObject {
 
     private func resolvedPrimaryDownloadSource(for track: DownloadTrack) async -> DownloadSourceChoice {
         var source = preferredDownloadSource(for: track.sourceURL)
-        if track.provider == .spotify && source.platform == .appleMusic {
-            do {
-                let seed = mappingSeedURL(for: track.sourceURL)
-                let mappedURL = try await fetchMappedURL(for: seed, platform: .spotify)
-                log("Mapped Apple Music source URL \(track.sourceURL) to Spotify: \(mappedURL)")
-                source = DownloadSourceChoice(
-                    platform: .spotify,
-                    url: mappedURL,
-                    backendGenreSource: DownloadPlatform.spotify.backendGenreSource
-                )
-            } catch {
-                log("Failed to map Apple Music track \(track.name) to Spotify: \(error.localizedDescription)")
-            }
+        if source.platform == .appleMusic, let deezerURL = await mapTrackToDeezerURL(track) {
+            source = DownloadSourceChoice(
+                platform: .deezer,
+                url: deezerURL,
+                backendGenreSource: DownloadPlatform.deezer.backendGenreSource
+            )
         }
         return source
     }
@@ -4426,27 +4412,10 @@ final class DownloadViewModel: ObservableObject {
             candidates.append(try makeCandidate(label: "\(Config.downloadBackendLabel) (MP3 Fallback)", format: "mp3"))
         }
 
-        if source.platform == .appleMusic, track != nil {
-            var spotifyURL: String?
-
-            if spotifyURL == nil,
-               let mapped = try? await fetchMappedURL(for: mappingSeedURL(for: source.url), platform: .spotify) {
-                spotifyURL = mapped
-                log("Spotify fallback: song.link AM→Spotify: \(mapped)")
-            }
-
-            if spotifyURL == nil,
-               let deezerMapped = try? await fetchMappedURL(for: mappingSeedURL(for: source.url), platform: .deezer),
-               let mapped = try? await fetchMappedURL(for: deezerMapped, platform: .spotify) {
-                spotifyURL = mapped
-                log("Spotify fallback: song.link AM→Deezer→Spotify: \(mapped)")
-            }
-
-            if let spotifyURL {
-                candidates.append(try makeCandidate(label: "\(Config.downloadBackendLabel) (Spotify)", format: desiredFormat, overrideURL: spotifyURL))
-                if desiredFormat.lowercased() != "mp3" {
-                    candidates.append(try makeCandidate(label: "\(Config.downloadBackendLabel) (Spotify MP3 Fallback)", format: "mp3", overrideURL: spotifyURL))
-                }
+        if source.platform == .appleMusic, let track, let deezerURL = await mapTrackToDeezerURL(track) {
+            candidates.append(try makeCandidate(label: "\(Config.downloadBackendLabel) (Deezer)", format: desiredFormat, overrideURL: deezerURL))
+            if desiredFormat.lowercased() != "mp3" {
+                candidates.append(try makeCandidate(label: "\(Config.downloadBackendLabel) (Deezer MP3 Fallback)", format: "mp3", overrideURL: deezerURL))
             }
         }
 
@@ -4907,28 +4876,41 @@ final class DownloadViewModel: ObservableObject {
         }
     }
 
-    private func fetchMappedURL(for seedURL: String, platform: DownloadPlatform) async throws -> String {
-        guard let url = URL(string: "https://api.song.link/v1-alpha.1/links?url=\(seedURL.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")") else {
-            throw DownloadError.invalidURL(seedURL)
-        }
-
-        let (data, response) = try await session.data(for: URLRequest(url: url))
-        try validateHTTP(response: response, data: data)
-
-        guard
-            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let links = obj["linksByPlatform"] as? [String: Any],
-            let entry = links[platform.rawValue] as? [String: Any],
-            let mapped = entry["url"] as? String,
-            !mapped.isEmpty
-        else {
-            throw DownloadError.mappingFailed("Song.link could not map URL to \(platform.displayName).")
-        }
-        return mapped
+    private func matchKey(_ value: String) -> String {
+        value
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
 
-    private func mappingSeedURL(for sourceURL: String) -> String {
-        sourceURL
+    private func mapTrackToDeezerURL(_ track: DownloadTrack) async -> String? {
+        let titleKey = matchKey(track.name)
+        let artistKeys = track.artistLine
+            .components(separatedBy: CharacterSet(charactersIn: ",&;/"))
+            .map { matchKey($0) }
+            .filter { !$0.isEmpty }
+        guard !titleKey.isEmpty else { return nil }
+
+        let queries = ["\(track.name) \(track.artistLine)", track.name]
+        for query in queries {
+            let results = await SongMetadata.searchDeezer(query: query, limit: 25)
+            let match = results.first { result in
+                let resultTitle = matchKey(result.title)
+                let resultArtist = matchKey(result.artist.name)
+                let titleMatches = resultTitle == titleKey || resultTitle.hasPrefix(titleKey) || titleKey.hasPrefix(resultTitle)
+                let artistMatches = artistKeys.isEmpty || artistKeys.contains { $0 == resultArtist || $0.contains(resultArtist) || resultArtist.contains($0) }
+                return titleMatches && artistMatches
+            }
+            if let match {
+                let url = match.link ?? "https://www.deezer.com/track/\(match.id)"
+                log("Deezer match for \(track.name) - \(track.artistLine): \(url)")
+                return url
+            }
+        }
+        log("No Deezer match found for \(track.name) - \(track.artistLine)")
+        return nil
     }
 
     private func fetchDataWithProgress(
@@ -6038,10 +6020,10 @@ final class DownloadViewModel: ObservableObject {
     static let appleMusicUnavailableMessage = "Unable to download using Apple Music. Please paste the Spotify or Deezer URL."
 
     private func downloadFailureMessage(for track: DownloadTrack, error: Error) -> String {
-        guard track.provider == .appleMusic else {
-            return Self.friendlyDownloadFailureMessage(for: error)
+        if let downloadError = error as? DownloadError, case .trackNotFound = downloadError {
+            return Self.appleMusicUnavailableMessage
         }
-        return Self.appleMusicUnavailableMessage
+        return Self.friendlyDownloadFailureMessage(for: error)
     }
 
     private static func friendlyDownloadFailureMessage(for error: Error) -> String {
@@ -6060,7 +6042,7 @@ final class DownloadViewModel: ObservableObject {
 
         if let downloadError = error as? DownloadError {
             switch downloadError {
-            case .invalidURL, .mappingFailed:
+            case .invalidURL, .mappingFailed, .trackNotFound:
                 return "This track isn't available right now."
             case .searchFailed:
                 return "Search failed. Please try again."
