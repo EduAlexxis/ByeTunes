@@ -5972,14 +5972,33 @@ class DeviceManager: ObservableObject {
         return true
     }
 
+    private func isLocalAudioReadable(_ url: URL) -> Bool {
+        let needsSecurityScope = url.startAccessingSecurityScopedResource()
+        defer {
+            if needsSecurityScope {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? handle.close() }
+        guard let head = try? handle.read(upToCount: 1) else { return false }
+        return !head.isEmpty
+    }
+
     func injectSongs(songs: [SongMetadata], progress: @escaping (String) -> Void, completion: @escaping (Bool) -> Void) {
         Logger.shared.log("[DeviceManager] injectSongs called with \(songs.count) songs")
 
         DispatchQueue.global(qos: .userInitiated).async {
             var validSongs: [SongMetadata] = []
+            var unreadableTitles: [String] = []
             let isBatch = songs.count > 1
 
             for var song in songs {
+                guard self.isLocalAudioReadable(song.localURL) else {
+                    Logger.shared.log("[DeviceManager] Skipping unreadable local file: \(song.localURL.lastPathComponent) (\(song.title))")
+                    unreadableTitles.append(song.title)
+                    continue
+                }
                 if song.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     let filename = song.localURL.lastPathComponent
                     Logger.shared.log("[DeviceManager] Sanitize: Empty title for '\(filename)', using filename.")
@@ -6009,9 +6028,14 @@ class DeviceManager: ObservableObject {
 
             Logger.shared.log("[DeviceManager] Processing \(validSongs.count) songs (Sanitized).")
 
+            if !unreadableTitles.isEmpty {
+                Logger.shared.log("[DeviceManager] \(unreadableTitles.count) unreadable file(s) excluded from injection: \(unreadableTitles.prefix(5).joined(separator: ", "))")
+                progress("Skipping \(unreadableTitles.count) unreadable file(s)...")
+            }
+
             if validSongs.isEmpty {
                 Logger.shared.log("[DeviceManager] ⚠️ ABORTING: No songs found.")
-                DispatchQueue.main.async { completion(true) }
+                DispatchQueue.main.async { completion(unreadableTitles.isEmpty) }
                 return
             }
             if self.killMusicBeforeInjectEnabled {
@@ -6352,7 +6376,13 @@ class DeviceManager: ObservableObject {
         
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             var validSongs: [SongMetadata] = []
+            var unreadableCount = 0
             for var song in songs {
+                guard self?.isLocalAudioReadable(song.localURL) ?? true else {
+                    Logger.shared.log("[DeviceManager] Skipping unreadable local file: \(song.localURL.lastPathComponent) (\(song.title))")
+                    unreadableCount += 1
+                    continue
+                }
                 if song.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     let filename = song.localURL.lastPathComponent
                     song.title = filename
@@ -6372,9 +6402,14 @@ class DeviceManager: ObservableObject {
                 validSongs.append(song)
             }
 
+            if unreadableCount > 0 {
+                Logger.shared.log("[DeviceManager] \(unreadableCount) unreadable file(s) excluded from playlist injection")
+                progress("Skipping \(unreadableCount) unreadable file(s)...")
+            }
+
             if validSongs.isEmpty {
                 Logger.shared.log("[DeviceManager] ⚠️ ABORTING: No songs for playlist.")
-                DispatchQueue.main.async { completion(true) }
+                DispatchQueue.main.async { completion(unreadableCount == 0) }
                 return
             }
         
