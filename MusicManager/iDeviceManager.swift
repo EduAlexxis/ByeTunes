@@ -3370,29 +3370,61 @@ class DeviceManager: ObservableObject {
         completion(playlists)
     }
 
-    func exportSongs(_ songs: [ExportableSongInfo], destinationFolder: URL, completion: @escaping (Bool, String, [URL]) -> Void) {
+    private static func isWritableExportFolder(_ folder: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            return false
+        }
+        let probe = folder.appendingPathComponent(".byetunes-write-test-\(UUID().uuidString)")
+        do {
+            try Data().write(to: probe)
+            try? FileManager.default.removeItem(at: probe)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private static func fallbackExportDirectory() -> URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("Exports", isDirectory: true)
+    }
+
+    func exportSongs(_ songs: [ExportableSongInfo], destinationFolder: URL?, completion: @escaping (Bool, String, [URL]) -> Void) {
         guard !songs.isEmpty else {
             completion(false, "No songs selected.", [])
             return
         }
 
         DispatchQueue.global(qos: .userInitiated).async {
+            let needsSecurityScope = destinationFolder?.startAccessingSecurityScopedResource() ?? false
+            let finish: (Bool, String, [URL]) -> Void = { success, message, urls in
+                if needsSecurityScope {
+                    destinationFolder?.stopAccessingSecurityScopedResource()
+                }
+                completion(success, message, urls)
+            }
+
             guard self.ensureActiveTransport(reason: "exporting songs from the device library") else {
-                completion(false, "Could not reconnect to the device.", [])
+                finish(false, "Could not reconnect to the device.", [])
                 return
             }
 
             let fileManager = FileManager.default
-            let exportDirectory = destinationFolder
+            var exportDirectory = destinationFolder ?? Self.fallbackExportDirectory()
+            var usedFallbackFolder = false
 
-            do {
-                if !fileManager.fileExists(atPath: exportDirectory.path) {
-                    try fileManager.createDirectory(at: exportDirectory, withIntermediateDirectories: true)
+            if destinationFolder.map({ !Self.isWritableExportFolder($0) }) ?? true {
+                Logger.shared.log("[Export] Selected export folder is unavailable, using app folder fallback: \(destinationFolder?.path ?? "none")")
+                let fallback = Self.fallbackExportDirectory()
+                do {
+                    try fileManager.createDirectory(at: fallback, withIntermediateDirectories: true)
+                } catch {
+                    Logger.shared.log("[Export] Failed to create fallback export folder: \(error)")
+                    finish(false, "Could not access the selected folder or the app folder.", [])
+                    return
                 }
-            } catch {
-                Logger.shared.log("[Export] Failed to create export folder: \(error)")
-                completion(false, "Could not access selected folder.", [])
-                return
+                exportDirectory = fallback
+                usedFallbackFolder = true
             }
 
             let musicDir = self.resolvePrimaryMusicDirectory()
@@ -3418,13 +3450,16 @@ class DeviceManager: ObservableObject {
                     let success = !exportedURLs.isEmpty
                     let message: String
                     if success {
-                        message = failedCount == 0
+                        let summary = failedCount == 0
                             ? "Exported \(exportedURLs.count) song(s)."
                             : "Exported \(exportedURLs.count) song(s), \(failedCount) failed."
+                        message = usedFallbackFolder
+                            ? "\(summary) Your export folder wasn't available, so they were saved to the Exports folder in the Files app under On My iPhone > ByeTunes."
+                            : summary
                     } else {
                         message = "No songs were exported."
                     }
-                    completion(success, message, exportedURLs)
+                    finish(success, message, exportedURLs)
                     return
                 }
 

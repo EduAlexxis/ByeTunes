@@ -171,6 +171,10 @@ struct DeviceLibraryBrowserView: View {
         Self.resolveBookmarkedFolder(forKey: Self.exportFolderBookmarkKey)
     }
 
+    private var hasSavedExportFolder: Bool {
+        UserDefaults.standard.data(forKey: Self.exportFolderBookmarkKey) != nil
+    }
+
     private func computeGroupedSongs() -> [(key: String, songs: [DeviceManager.ExportableSongInfo])] {
         guard sortOption == .titleAscending else {
             return [(key: "", songs: sortedFilteredSongsFlat)]
@@ -1991,15 +1995,16 @@ struct DeviceLibraryBrowserView: View {
         let items = selectedSongs
         guard !items.isEmpty else { return }
 
-        guard let preferredExportFolder else {
+        let exportFolder = preferredExportFolder
+        if exportFolder == nil && !hasSavedExportFolder {
             pendingExportAfterFolderSelection = true
             showingFolderPicker = true
             return
         }
 
         isExporting = true
-        statusMessage = "Exporting \(items.count) song(s) to \(preferredExportFolder.lastPathComponent)..."
-        manager.exportSongs(items, destinationFolder: preferredExportFolder) { success, message, _ in
+        statusMessage = "Exporting \(items.count) song(s) to \(exportFolder?.lastPathComponent ?? "the app folder")..."
+        manager.exportSongs(items, destinationFolder: exportFolder) { success, message, _ in
             DispatchQueue.main.async {
                 isExporting = false
                 statusMessage = success ? message : "\(message) Tap Change Folder and pick another location."
@@ -2019,15 +2024,16 @@ struct DeviceLibraryBrowserView: View {
         let items = selectedPlaylistSongs
         guard !items.isEmpty else { return }
 
-        guard let preferredExportFolder else {
+        let exportFolder = preferredExportFolder
+        if exportFolder == nil && !hasSavedExportFolder {
             pendingPlaylistExportAfterFolderSelection = true
             showingFolderPicker = true
             return
         }
 
         isExporting = true
-        statusMessage = "Exporting \(items.count) song(s) to \(preferredExportFolder.lastPathComponent)..."
-        manager.exportSongs(items, destinationFolder: preferredExportFolder) { success, message, _ in
+        statusMessage = "Exporting \(items.count) song(s) to \(exportFolder?.lastPathComponent ?? "the app folder")..."
+        manager.exportSongs(items, destinationFolder: exportFolder) { success, message, _ in
             DispatchQueue.main.async {
                 isExporting = false
                 statusMessage = success ? message : "\(message) Tap Change Folder and pick another location."
