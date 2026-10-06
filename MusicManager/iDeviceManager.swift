@@ -3527,19 +3527,7 @@ class DeviceManager: ObservableObject {
             }
 
             _ = self.sqliteExec(db, "BEGIN IMMEDIATE TRANSACTION")
-            let success = [
-                "DELETE FROM item WHERE item_pid = \(itemPid)",
-                "DELETE FROM item_extra WHERE item_pid = \(itemPid)",
-                "DELETE FROM item_playback WHERE item_pid = \(itemPid)",
-                "DELETE FROM item_stats WHERE item_pid = \(itemPid)",
-                "DELETE FROM item_store WHERE item_pid = \(itemPid)",
-                "DELETE FROM item_video WHERE item_pid = \(itemPid)",
-                "DELETE FROM item_search WHERE item_pid = \(itemPid)",
-                "DELETE FROM lyrics WHERE item_pid = \(itemPid)",
-                "DELETE FROM chapter WHERE item_pid = \(itemPid)",
-                "DELETE FROM artwork_token WHERE entity_pid = \(itemPid)",
-                "DELETE FROM best_artwork_token WHERE entity_pid = \(itemPid)"
-            ].allSatisfy { self.sqliteExec(db, $0) }
+            let success = self.removeLibraryRowsAndResidue(db: db, itemPids: [itemPid])
             _ = self.sqliteExec(db, success ? "COMMIT" : "ROLLBACK")
             _ = self.sqliteExec(db, "PRAGMA wal_checkpoint(TRUNCATE)")
             _ = self.sqliteExec(db, "PRAGMA journal_mode=DELETE")
@@ -3557,6 +3545,56 @@ class DeviceManager: ObservableObject {
 
             completion(true, "Deleted \(song.title).")
         }
+    }
+
+    private func removeLibraryRowsAndResidue(db: OpaquePointer?, itemPids: [Int64]) -> Bool {
+        let tempTables = ["_del", "_touched_album", "_touched_iartist", "_touched_aartist", "_touched_genre", "_gone", "_tok"]
+        func dropTempTables() {
+            for table in tempTables {
+                _ = sqliteExec(db, "DROP TABLE IF EXISTS temp.\(table)")
+            }
+        }
+        dropTempTables()
+        defer { dropTempTables() }
+
+        guard sqliteExec(db, "CREATE TEMP TABLE _del(item_pid INTEGER PRIMARY KEY)") else { return false }
+        for pid in itemPids {
+            guard sqliteExec(db, "INSERT OR IGNORE INTO _del VALUES (\(pid))") else { return false }
+        }
+
+        let statements = [
+            "CREATE TEMP TABLE _touched_album AS SELECT DISTINCT album_pid p FROM item WHERE item_pid IN (SELECT item_pid FROM _del);",
+            "CREATE TEMP TABLE _touched_iartist AS SELECT DISTINCT item_artist_pid p FROM item WHERE item_pid IN (SELECT item_pid FROM _del);",
+            "CREATE TEMP TABLE _touched_aartist AS SELECT DISTINCT album_artist_pid p FROM item WHERE item_pid IN (SELECT item_pid FROM _del);",
+            "CREATE TEMP TABLE _touched_genre AS SELECT DISTINCT genre_id p FROM item WHERE item_pid IN (SELECT item_pid FROM _del);",
+            "INSERT OR IGNORE INTO _del SELECT i.item_pid FROM item i LEFT JOIN item_extra e ON e.item_pid=i.item_pid WHERE i.album_pid IN (SELECT p FROM _touched_album) AND i.in_my_library=0 AND IFNULL(e.location,'')='';",
+            "DELETE FROM item WHERE item_pid IN (SELECT item_pid FROM _del);",
+            "CREATE TEMP TABLE _gone(p INTEGER PRIMARY KEY);",
+            "INSERT OR IGNORE INTO _gone SELECT item_pid FROM _del;",
+            "INSERT OR IGNORE INTO _gone SELECT album_pid FROM album WHERE (album_pid IN (SELECT p FROM _touched_album) OR album_artist_pid IN (SELECT p FROM _touched_aartist)) AND NOT EXISTS (SELECT 1 FROM item WHERE item.album_pid=album.album_pid);",
+            "INSERT OR IGNORE INTO _gone SELECT item_artist_pid FROM item_artist WHERE item_artist_pid IN (SELECT p FROM _touched_iartist) AND NOT EXISTS (SELECT 1 FROM item WHERE item.item_artist_pid=item_artist.item_artist_pid);",
+            "INSERT OR IGNORE INTO _gone SELECT album_artist_pid FROM album_artist WHERE album_artist_pid IN (SELECT p FROM _touched_aartist) AND NOT EXISTS (SELECT 1 FROM item WHERE item.album_artist_pid=album_artist.album_artist_pid) AND NOT EXISTS (SELECT 1 FROM album WHERE album.album_artist_pid=album_artist.album_artist_pid AND album.album_pid NOT IN (SELECT p FROM _gone));",
+            "CREATE TEMP TABLE _tok(t TEXT PRIMARY KEY);",
+            "INSERT OR IGNORE INTO _tok SELECT artwork_token FROM artwork_token WHERE entity_pid IN (SELECT p FROM _gone) AND artwork_token!='';",
+            "INSERT OR IGNORE INTO _tok SELECT available_artwork_token FROM best_artwork_token WHERE entity_pid IN (SELECT p FROM _gone) AND available_artwork_token!='';",
+            "INSERT OR IGNORE INTO _tok SELECT fetchable_artwork_token FROM best_artwork_token WHERE entity_pid IN (SELECT p FROM _gone) AND fetchable_artwork_token!='';",
+            "DELETE FROM item_extra WHERE item_pid IN (SELECT item_pid FROM _del);",
+            "DELETE FROM item_playback WHERE item_pid IN (SELECT item_pid FROM _del);",
+            "DELETE FROM item_stats WHERE item_pid IN (SELECT item_pid FROM _del);",
+            "DELETE FROM item_store WHERE item_pid IN (SELECT item_pid FROM _del);",
+            "DELETE FROM item_video WHERE item_pid IN (SELECT item_pid FROM _del);",
+            "DELETE FROM item_search WHERE item_pid IN (SELECT item_pid FROM _del);",
+            "DELETE FROM lyrics WHERE item_pid IN (SELECT item_pid FROM _del);",
+            "DELETE FROM chapter WHERE item_pid IN (SELECT item_pid FROM _del);",
+            "DELETE FROM artwork_token WHERE entity_pid IN (SELECT p FROM _gone);",
+            "DELETE FROM best_artwork_token WHERE entity_pid IN (SELECT p FROM _gone);",
+            "DELETE FROM album WHERE album_pid IN (SELECT p FROM _gone);",
+            "DELETE FROM item_artist WHERE item_artist_pid IN (SELECT p FROM _gone);",
+            "DELETE FROM album_artist WHERE album_artist_pid IN (SELECT p FROM _gone);",
+            "DELETE FROM genre WHERE genre_id IN (SELECT p FROM _touched_genre) AND NOT EXISTS (SELECT 1 FROM item WHERE item.genre_id=genre.genre_id);",
+            "DELETE FROM artwork WHERE artwork_token IN (SELECT t FROM _tok) AND artwork_token NOT IN (SELECT artwork_token FROM artwork_token) AND artwork_token NOT IN (SELECT available_artwork_token FROM best_artwork_token) AND artwork_token NOT IN (SELECT fetchable_artwork_token FROM best_artwork_token WHERE fetchable_artwork_token!='');"
+        ]
+        return statements.allSatisfy { sqliteExec(db, $0) }
     }
 
     func deleteExportableSongs(_ songsToDelete: [ExportableSongInfo], completion: @escaping (Bool, String) -> Void) {
@@ -3585,6 +3623,7 @@ class DeviceManager: ObservableObject {
             }
 
             var deletedCount = 0
+            var deletedPids: [Int64] = []
             var success = true
 
             _ = self.sqliteExec(db, "BEGIN IMMEDIATE TRANSACTION")
@@ -3604,25 +3643,12 @@ class DeviceManager: ObservableObject {
                 let itemPid = song.itemPid > 0 ? song.itemPid : (self.itemPid(forRemoteFilename: song.remoteFilename, db: db) ?? 0)
                 guard itemPid > 0 else { continue }
 
-                let rowSuccess = [
-                    "DELETE FROM item WHERE item_pid = \(itemPid)",
-                    "DELETE FROM item_extra WHERE item_pid = \(itemPid)",
-                    "DELETE FROM item_playback WHERE item_pid = \(itemPid)",
-                    "DELETE FROM item_stats WHERE item_pid = \(itemPid)",
-                    "DELETE FROM item_store WHERE item_pid = \(itemPid)",
-                    "DELETE FROM item_video WHERE item_pid = \(itemPid)",
-                    "DELETE FROM item_search WHERE item_pid = \(itemPid)",
-                    "DELETE FROM lyrics WHERE item_pid = \(itemPid)",
-                    "DELETE FROM chapter WHERE item_pid = \(itemPid)",
-                    "DELETE FROM artwork_token WHERE entity_pid = \(itemPid)",
-                    "DELETE FROM best_artwork_token WHERE entity_pid = \(itemPid)"
-                ].allSatisfy { self.sqliteExec(db, $0) }
+                deletedPids.append(itemPid)
+                deletedCount += 1
+            }
 
-                if rowSuccess {
-                    deletedCount += 1
-                } else {
-                    success = false
-                }
+            if !deletedPids.isEmpty && !self.removeLibraryRowsAndResidue(db: db, itemPids: deletedPids) {
+                success = false
             }
 
             _ = self.sqliteExec(db, success ? "COMMIT" : "ROLLBACK")
