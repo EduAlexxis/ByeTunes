@@ -4866,7 +4866,7 @@ final class DownloadViewModel: ObservableObject {
             if FileManager.default.fileExists(atPath: destination.path) {
                 try FileManager.default.removeItem(at: destination)
             }
-            try FileManager.default.copyItem(at: song.localURL, to: destination)
+            try AudioTagWriter.copyKeptSong(song, to: destination)
             var updatedSong = song
             updatedSong.localURL = destination
             return updatedSong

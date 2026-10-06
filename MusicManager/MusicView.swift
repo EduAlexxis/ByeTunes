@@ -424,7 +424,10 @@ struct MusicView: View {
                                             showEditButton: canEdit,
                                             onEdit: {
                                                 selectedSongForMatch = song
-                                            }
+                                            },
+                                            onSave: AudioTagWriter.supports(song.localURL) ? {
+                                                saveTaggedCopy(of: song)
+                                            } : nil
                                         ) {
                                             withAnimation(.easeOut(duration: 0.2)) {
                                                 songs.removeAll { $0.id == song.id }
@@ -793,7 +796,7 @@ struct MusicView: View {
                 if FileManager.default.fileExists(atPath: destination.path) {
                     try FileManager.default.removeItem(at: destination)
                 }
-                try FileManager.default.copyItem(at: song.localURL, to: destination)
+                try AudioTagWriter.copyKeptSong(song, to: destination)
                 if !stageInputFiles {
                     try? FileManager.default.removeItem(at: song.localURL)
                 }
@@ -1201,6 +1204,24 @@ struct MusicView: View {
             return "Large import mode keeps the queue hidden until everything is ready."
         }
         return "Use Review Batch Metadata to make edits before injecting."
+    }
+
+    private func saveTaggedCopy(of song: SongMetadata) {
+        Task.detached(priority: .userInitiated) {
+            do {
+                let taggedURL = try AudioTagWriter.makeTaggedCopy(of: song)
+                await MainActor.run {
+                    ShareSheetHelper.share(items: [taggedURL]) {
+                        try? FileManager.default.removeItem(at: taggedURL.deletingLastPathComponent())
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    Logger.shared.log("[TagWriter] Failed to save tagged copy of \(song.title): \(error)")
+                    showToast(title: "Couldn't Save Song", icon: "xmark.circle.fill")
+                }
+            }
+        }
     }
 
     private func showToast(title: String, icon: String) {

@@ -31,6 +31,7 @@ struct SettingsView: View {
     @AppStorage("storeRegion") private var storeRegion = "US"
     @AppStorage("appleRichMetadata") private var appleRichMetadata = true
     @AppStorage("keepDownloadedSongs") private var keepDownloadedSongs = false
+    @AppStorage("tagKeptDownloadedSongs") private var tagKeptDownloadedSongs = false
     @AppStorage("backgroundDownloadsEnabled") private var backgroundDownloadsEnabled = false
     @AppStorage("backgroundMetadataFetchEnabled") private var backgroundMetadataFetchEnabled = true
     @AppStorage("downloadLiveActivitiesEnabled") private var downloadLiveActivitiesEnabled = true
@@ -201,6 +202,7 @@ struct SettingsView: View {
                                 appleRichMetadata: $appleRichMetadata,
                                 downloadSearchProvider: $downloadSearchProvider,
                                 keepDownloadedSongs: $keepDownloadedSongs,
+                                tagKeptDownloadedSongs: $tagKeptDownloadedSongs,
                                 backgroundDownloadsEnabled: $backgroundDownloadsEnabled,
                                 backgroundMetadataFetchEnabled: $backgroundMetadataFetchEnabled,
                                 downloadLiveActivitiesEnabled: $downloadLiveActivitiesEnabled,
@@ -1084,6 +1086,7 @@ private struct DownloaderSettingsScreen: View {
     @Binding var appleRichMetadata: Bool
     @Binding var downloadSearchProvider: String
     @Binding var keepDownloadedSongs: Bool
+    @Binding var tagKeptDownloadedSongs: Bool
     @Binding var backgroundDownloadsEnabled: Bool
     @Binding var backgroundMetadataFetchEnabled: Bool
     @Binding var downloadLiveActivitiesEnabled: Bool
@@ -1369,7 +1372,7 @@ private struct DownloaderSettingsScreen: View {
 
                         Divider().padding(.leading, 56)
 
-                        Toggle(isOn: $keepDownloadedSongs) {
+                        Toggle(isOn: $keepDownloadedSongs.animation(.easeInOut(duration: 0.2))) {
                             HStack {
                                 Image(systemName: "square.and.arrow.down.on.square")
                                     .font(.body)
@@ -1400,6 +1403,43 @@ private struct DownloaderSettingsScreen: View {
                         .toggleStyle(SwitchToggleStyle(tint: .accentColor))
                         .padding(.vertical, 10)
                         .padding(.horizontal, 16)
+
+                        if keepDownloadedSongs {
+                            Divider().padding(.leading, 56)
+
+                            Toggle(isOn: $tagKeptDownloadedSongs) {
+                                HStack {
+                                    Image(systemName: "tag")
+                                        .font(.body)
+                                        .foregroundColor(.primary)
+                                        .frame(width: 28)
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Save With Fetched Metadata")
+                                            .font(.body)
+                                        Text("Write the fetched tags and cover into kept files.")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+
+                                    Spacer()
+
+                                    Button {
+                                        showInfo(
+                                            "Save With Fetched Metadata",
+                                            "When on, the copies kept in the app's Documents folder get the metadata ByeTunes fetched (title, artist, album, genre, year, track and disc numbers, lyrics and cover art) written into the file, so it shows up correctly in other apps. Works for FLAC and MP3; other formats are kept as downloaded. Turn off to keep the original file untouched."
+                                        )
+                                    } label: {
+                                        infoButton
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+                            .padding(.vertical, 10)
+                            .padding(.horizontal, 16)
+                            .transition(.opacity)
+                        }
 
                         Divider().padding(.leading, 56)
 

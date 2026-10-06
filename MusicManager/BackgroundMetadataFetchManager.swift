@@ -211,10 +211,10 @@ final class BackgroundMetadataFetchManager: ObservableObject {
             if FileManager.default.fileExists(atPath: destination.path) {
                 try FileManager.default.removeItem(at: destination)
             }
-            let source = song.localURL
             let dest = destination
+            let sourceSong = song
             try await Task.detached(priority: .utility) {
-                try FileManager.default.copyItem(at: source, to: dest)
+                try AudioTagWriter.copyKeptSong(sourceSong, to: dest)
             }.value
             try? FileManager.default.removeItem(at: song.localURL)
             var updatedSong = song

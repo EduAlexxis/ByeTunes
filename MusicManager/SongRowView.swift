@@ -4,6 +4,7 @@ struct SongRowView: View {
     let song: SongMetadata
     var showEditButton: Bool = false
     var onEdit: () -> Void = {}
+    var onSave: (() -> Void)? = nil
     let onDelete: () -> Void
     
     var body: some View {
@@ -85,7 +86,18 @@ struct SongRowView: View {
                         .clipShape(Circle())
                 }
             }
-            
+            if let onSave {
+                Button {
+                    onSave()
+                } label: {
+                    Image(systemName: "square.and.arrow.down")
+                        .font(.caption.weight(.medium))
+                        .foregroundColor(Color.accentColor)
+                        .frame(width: 28, height: 28)
+                        .background(Color.accentColor.opacity(0.1))
+                        .clipShape(Circle())
+                }
+            }
             
             Button {
                 onDelete()
