@@ -22,32 +22,6 @@ nonisolated enum AudioTagWriter {
         ["flac", "mp3"].contains(url.pathExtension.lowercased())
     }
 
-    static func makeTaggedCopy(of song: SongMetadata) throws -> URL {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("TaggedExports-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-
-        let baseName = safeFilenameBase("\(song.artist) - \(song.title)")
-        let destination = directory.appendingPathComponent("\(baseName).\(song.localURL.pathExtension.lowercased())")
-
-        do {
-            try writeTaggedFile(of: song, to: destination)
-        } catch {
-            try? FileManager.default.removeItem(at: directory)
-            throw error
-        }
-        return destination
-    }
-
-    private static func safeFilenameBase(_ value: String) -> String {
-        let invalid = CharacterSet(charactersIn: "/\\?%*|\"<>:")
-        let cleaned = value
-            .components(separatedBy: invalid)
-            .joined(separator: "-")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let collapsed = cleaned.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-        return collapsed.isEmpty ? "Exported Song" : collapsed
-    }
-
     static func writeTaggedFile(of song: SongMetadata, to destination: URL) throws {
         let ext = song.localURL.pathExtension.lowercased()
         guard supports(song.localURL) else {

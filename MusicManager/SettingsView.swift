@@ -1427,7 +1427,7 @@ private struct DownloaderSettingsScreen: View {
                                     Button {
                                         showInfo(
                                             "Save With Fetched Metadata",
-                                            "When on, the copies kept in the app's Documents folder get the metadata ByeTunes fetched (title, artist, album, genre, year, track and disc numbers, lyrics and cover art) written into the file, so it shows up correctly in other apps. Works for FLAC and MP3; other formats are kept as downloaded. Turn off to keep the original file untouched."
+                                            "When on, the copies kept in the app's Documents folder get the metadata ByeTunes fetched (title, artist, album, genre, year, track and disc numbers, lyrics and cover art) written into the file, so it shows up correctly in other apps. Works for FLAC and MP3; other formats are kept as downloaded. Note: FLAC files can't render artwork on iOS, so the cover won't show on a FLAC file in iOS even though it is embedded. Turn off to keep the original file untouched."
                                         )
                                     } label: {
                                         infoButton

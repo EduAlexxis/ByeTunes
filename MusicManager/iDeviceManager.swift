@@ -1263,6 +1263,19 @@ class DeviceManager: ObservableObject {
         }
     }
     
+    private func removeSupersededSnapshots(in root: URL, keeping newest: URL, isFull: Bool) {
+        let fm = FileManager.default
+        guard let entries = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else {
+            return
+        }
+        for entry in entries where entry.hasDirectoryPath && entry.lastPathComponent.hasPrefix("snapshot_") && entry.standardizedFileURL != newest.standardizedFileURL {
+            let entryIsFull = fm.fileExists(atPath: entry.appendingPathComponent(snapshotFullBackupDirectory).path)
+            guard entryIsFull == isFull else { continue }
+            try? fm.removeItem(at: entry)
+            Logger.shared.log("[Backup] Removed older \(isFull ? "full" : "light") snapshot: \(entry.lastPathComponent)")
+        }
+    }
+
     func createDatabaseSnapshot(forceDbOnly: Bool = false, forceFullBackup: Bool = false, progress: SnapshotProgressHandler? = nil, completion: @escaping (Bool, String) -> Void) {
         Logger.shared.log("[Backup] Creating database snapshot...")
 
@@ -1286,18 +1299,13 @@ class DeviceManager: ObservableObject {
             formatter.dateFormat = "yyyyMMdd_HHmmss"
             let stamp = formatter.string(from: Date())
 
-            let folder = root.appendingPathComponent("snapshot_\(stamp)", isDirectory: true)
-            
-            if let existing = try? FileManager.default.contentsOfDirectory(
-                at: root,
-                includingPropertiesForKeys: nil,
-                options: [.skipsHiddenFiles]
-            ) {
-                for entry in existing where entry.hasDirectoryPath && entry.lastPathComponent.hasPrefix("snapshot_") {
-                    try? FileManager.default.removeItem(at: entry)
-                }
+            var folder = root.appendingPathComponent("snapshot_\(stamp)", isDirectory: true)
+            var folderSuffix = 1
+            while FileManager.default.fileExists(atPath: folder.path) {
+                folder = root.appendingPathComponent("snapshot_\(stamp)-\(folderSuffix)", isDirectory: true)
+                folderSuffix += 1
             }
-            
+
             do {
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             } catch {
@@ -1404,6 +1412,7 @@ class DeviceManager: ObservableObject {
                 Logger.shared.log("[Backup] Full backup: wrote \(playlistCount) playlist file(s)")
             }
 
+            self.removeSupersededSnapshots(in: root, keeping: folder, isFull: fullBackupEnabled)
             progress?("Backup complete.", 1)
             Logger.shared.log("[Backup] Snapshot complete: \(folder.lastPathComponent) (\(saved.count) files)")
             completion(true, fullBackupEnabled ? "Full snapshot created: \(folder.lastPathComponent)" : "Snapshot created: \(folder.lastPathComponent)")
