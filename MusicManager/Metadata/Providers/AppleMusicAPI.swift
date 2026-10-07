@@ -10,26 +10,8 @@ actor AppleMusicAPI {
     static let shared = AppleMusicAPI()
     private let browserUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     
-    struct AppleMusicSearchResponse: Codable {
-        let results: AppleMusicSearchResults?
-        let errors: [AppleMusicAPIErrorPayload]?
-    }
     
-    struct AppleMusicSearchResults: Codable {
-        let songs: AppleMusicSongsPage?
-    }
     
-    struct AppleMusicSongsPage: Codable {
-        let data: [AppleMusicSong]
-    }
-
-    struct AppleMusicAPIErrorPayload: Codable {
-        let id: String?
-        let title: String?
-        let detail: String?
-        let status: String?
-        let code: String?
-    }
     
     struct AppleMusicSong: Codable, Identifiable {
         let id: String

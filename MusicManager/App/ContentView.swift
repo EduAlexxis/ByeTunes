@@ -1,10 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-extension Notification.Name {
-    static let importDownloadedSongs = Notification.Name("ImportDownloadedSongs")
-}
-
 struct AppUpdateInfo: Identifiable, Equatable {
     let id = UUID()
     let version: String
@@ -14,7 +10,6 @@ struct AppUpdateInfo: Identifiable, Equatable {
 
 enum AppUpdateChecker {
     static let currentVersion = "2.5"
-    static let releasesURL = URL(string: "https://github.com/EduAlexxis/ByeTunes/releases")!
 
     private struct GitHubRelease: Decodable {
         let tagName: String
@@ -101,7 +96,6 @@ struct ContentView: View {
     @State private var availableUpdate: AppUpdateInfo?
     @State private var dismissedUpdateVersion: String?
 
-    // MARK: - iOS 26+ Version Check (GlassUI Support)
     private var isIOS26OrLater: Bool {
         let version = ProcessInfo.processInfo.operatingSystemVersion
         return version.majorVersion >= 26

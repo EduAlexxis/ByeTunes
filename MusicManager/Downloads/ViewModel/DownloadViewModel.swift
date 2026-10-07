@@ -95,11 +95,6 @@ final class DownloadViewModel: ObservableObject {
         ]
     }
 
-    var queueProgress: Double {
-        guard totalQueueCount > 0 else { return 0 }
-        return Double(completedQueueCount) / Double(totalQueueCount)
-    }
-
     var aggregateDownloadProgress: Double {
         guard totalQueueCount > 0 else { return 0 }
         let activeCredit = downloadProgressByTrackID.values.reduce(0, +)
@@ -117,17 +112,6 @@ final class DownloadViewModel: ObservableObject {
         if let previewEndObserver {
             NotificationCenter.default.removeObserver(previewEndObserver)
         }
-    }
-
-    var queueStatusText: String {
-        if isPaused {
-            return "Paused"
-        }
-        guard totalQueueCount > 0 else { return "Apple Music Search" }
-        if !activeDownloadTrackIDs.isEmpty, completedQueueCount < totalQueueCount {
-            return "\(min(completedQueueCount + activeDownloadTrackIDs.count, totalQueueCount))/\(totalQueueCount)"
-        }
-        return "\(completedQueueCount)/\(totalQueueCount)"
     }
 
     var queueCounterText: String {

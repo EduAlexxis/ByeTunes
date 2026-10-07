@@ -355,33 +355,6 @@ extension DownloadViewModel {
         return nil
     }
 
-    func extractProviderDownloadURL(from object: [String: Any]) -> URL? {
-        if let manifest = findFirstString(in: object, matching: ["manifest"]),
-           let decoded = decodeManifestMediaURL(manifest) {
-            return decoded
-        }
-
-        if let direct = findFirstURLString(
-            in: object,
-            matching: [
-                "stream_url",
-                "streamUrl",
-                "direct_download_url",
-                "directDownloadUrl",
-                "download_url",
-                "downloadUrl",
-                "media_url",
-                "mediaUrl",
-                "url",
-                "link"
-            ]
-        ), let url = URL(string: direct) {
-            return url
-        }
-
-        return nil
-    }
-
     func findFirstURLString(in object: Any, matching preferredKeys: [String]) -> String? {
         for key in preferredKeys {
             if let value = findFirstString(in: object, matching: [key]), URL(string: value) != nil {

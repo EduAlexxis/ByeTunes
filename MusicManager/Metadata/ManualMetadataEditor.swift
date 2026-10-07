@@ -35,7 +35,6 @@ struct ManualMetadataEditor: View {
         case title, artist, album, genre, year, trackNumber
     }
 
-    // MARK: - Color helpers
     private static func hexString(from color: Color) -> String {
         let uiColor = UIColor(color)
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0

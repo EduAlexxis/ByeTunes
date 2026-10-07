@@ -592,7 +592,6 @@ struct ManageBackupsView: View {
         }
     }
 
-    // MARK: - Snapshot Helpers
     private func updateSnapshotProgress(title: String, message: String, progress: Double?) {
         snapshotProgressTitle = title
         snapshotProgressMessage = message.isEmpty ? "Working..." : message
@@ -618,7 +617,6 @@ struct ManageBackupsView: View {
         return "\(base) • \(snap.folderName)"
     }
 
-    // MARK: - Playlist Backups Loading & Restoring
     private func loadPlaylistBackups() {
         let fm = FileManager.default
         let backupsDir = URL.documentsDirectory.appendingPathComponent(playlistBackupsFolderName, isDirectory: true)
@@ -912,7 +910,6 @@ struct ManageBackupsView: View {
         }
     }
 
-    // MARK: - Snapshot Progress Popup
     private var snapshotProgressPopup: some View {
         ZStack {
             Color.black.opacity(0.28)

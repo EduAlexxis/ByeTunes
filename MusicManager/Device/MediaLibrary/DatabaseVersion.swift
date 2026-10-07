@@ -57,15 +57,6 @@ struct DatabaseVersion: Equatable {
         }
     }
 
-    var hasEditorialNotes: Bool {
-        switch schemaFamily {
-        case .ios17Or18:
-            return false
-        case .ios16, .ios26, .ios26Subscription:
-            return true
-        }
-    }
-
     var hasCanonicalIDs: Bool {
         switch schemaFamily {
         case .ios26, .ios26Subscription:

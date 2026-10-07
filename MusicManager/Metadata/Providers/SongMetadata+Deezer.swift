@@ -250,22 +250,6 @@ extension SongMetadata {
         }
     }
 
-    static func fetchDeezerTrackByISRC(_ isrc: String) async -> DeezerSong? {
-        let trimmed = isrc.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        guard let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
-            return nil
-        }
-        guard let url = URL(string: "https://api.deezer.com/track/isrc:\(encoded)") else { return nil }
-
-        do {
-            let (data, _) = try await SongMetadataNetworking.data(from: url)
-            return try JSONDecoder().decode(DeezerSong.self, from: data)
-        } catch {
-            Logger.shared.log("[SongMetadata] Deezer ISRC lookup failed for \(trimmed): \(error)")
-            return nil
-        }
-    }
     
     
     static func applyDeezerMatch(_ match: DeezerSong, to song: SongMetadata) async -> SongMetadata {

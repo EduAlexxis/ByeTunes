@@ -110,13 +110,6 @@ class DeviceManager: ObservableObject {
         let relativePath: String
     }
 
-    struct AlbumArtworkPointerCandidate {
-        let albumPid: Int64
-        let token: String
-        let sourceTypes: [Int]
-        let albumName: String
-    }
-
     struct ExperimentalAppleMetadataRepair {
         let itemPid: Int64
         let albumPid: Int64
@@ -250,10 +243,6 @@ class DeviceManager: ObservableObject {
 
     var expectedPairingFileTitle: String {
         requiresRPPairingTunnel ? "RP Pairing File" : "Pairing File"
-    }
-
-    var needsRPPairingFileUpgrade: Bool {
-        requiresRPPairingTunnel && !hasValidExpectedPairingFile
     }
 
     var shouldPromptForRPPairingUpgrade: Bool {

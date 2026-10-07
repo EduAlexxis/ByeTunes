@@ -38,8 +38,6 @@ struct MaintenancePanelView: View {
                     Button("Clear Persisted Queues", role: .destructive) {
                         QueuePersistenceStore.clearMusicQueue()
                         QueuePersistenceStore.clearDownloadQueue()
-                        QueuePersistenceStore.clearDeferredDownloadEnrichments()
-                        QueuePersistenceStore.clearPendingDownloadedImports()
                         lastAction = "Cleared persisted queues"
                     }
                 } footer: {

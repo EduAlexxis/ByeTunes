@@ -71,17 +71,9 @@ struct PersistedDownloadQueue: Codable {
     var failureReasons: [String: String]? = nil
 }
 
-struct PersistedPendingDownloadedImport: Codable {
-    var localURLPath: String
-    var trackID: String?
-    var track: PersistedDownloadTrack?
-}
-
 enum QueuePersistenceStore {
     private static let musicQueueKey = "persistedMusicQueue.v1"
     private static let downloadQueueKey = "persistedDownloadQueue.v1"
-    private static let deferredDownloadEnrichmentKey = "persistedDeferredDownloadEnrichment.v1"
-    private static let pendingDownloadedImportKey = "persistedPendingDownloadedImport.v1"
 
     @MainActor
     static func saveMusicQueue(_ songs: [SongMetadata]) {
@@ -122,24 +114,15 @@ enum QueuePersistenceStore {
         UserDefaults.standard.removeObject(forKey: downloadQueueKey)
     }
 
-    static func clearDeferredDownloadEnrichments() {
-        UserDefaults.standard.removeObject(forKey: deferredDownloadEnrichmentKey)
-    }
-
-    static func savePendingDownloadedImports(_ imports: [PersistedPendingDownloadedImport]) {
-        if imports.isEmpty {
-            UserDefaults.standard.removeObject(forKey: pendingDownloadedImportKey)
-            return
-        }
-        save(imports, forKey: pendingDownloadedImportKey)
-    }
-
-    static func loadPendingDownloadedImports() -> [PersistedPendingDownloadedImport] {
-        load([PersistedPendingDownloadedImport].self, forKey: pendingDownloadedImportKey) ?? []
-    }
-
-    static func clearPendingDownloadedImports() {
-        UserDefaults.standard.removeObject(forKey: pendingDownloadedImportKey)
+    static func removeLegacyKeys() {
+        let legacyKeys = [
+            "persistedPendingDownloadedImport.v1",
+            "persistedDeferredDownloadEnrichment.v1",
+            "backgroundMetadataFetchEnabled",
+            "backgroundBatchSize",
+            "pipKeepAliveEnabled"
+        ]
+        legacyKeys.forEach { UserDefaults.standard.removeObject(forKey: $0) }
     }
 
     static func referencedLocalPaths() -> Set<String> {
@@ -147,7 +130,6 @@ enum QueuePersistenceStore {
         if let songs: [PersistedSong] = load([PersistedSong].self, forKey: musicQueueKey) {
             songs.forEach { paths.insert($0.localURLPath) }
         }
-        loadPendingDownloadedImports().forEach { paths.insert($0.localURLPath) }
         return paths
     }
 

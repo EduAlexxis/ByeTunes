@@ -9,67 +9,6 @@ extension MusicView {
         }
     }
 
-    func queueDownloadedImports(_ urls: [URL]) {
-        let validURLs = urls.filter { FileManager.default.fileExists(atPath: $0.path) }
-        guard !validURLs.isEmpty else { return }
-
-        var existingPaths = Set(pendingDownloadedImportURLs.map(\.path))
-        var newPersisted = QueuePersistenceStore.loadPendingDownloadedImports()
-
-        for url in validURLs where existingPaths.insert(url.path).inserted {
-            pendingDownloadedImportURLs.append(url)
-            if !newPersisted.contains(where: { $0.localURLPath == url.path }) {
-                newPersisted.append(.init(localURLPath: url.path, trackID: nil))
-            }
-        }
-
-        QueuePersistenceStore.savePendingDownloadedImports(newPersisted)
-    }
-
-    func restorePendingDownloadedImportsIfNeeded() {
-        let restored = QueuePersistenceStore.loadPendingDownloadedImports()
-            .map { URL(fileURLWithPath: $0.localURLPath) }
-            .filter { FileManager.default.fileExists(atPath: $0.path) }
-        guard !restored.isEmpty else { return }
-
-        let existingPaths = Set(pendingDownloadedImportURLs.map(\.path))
-        let newURLs = restored.filter { !existingPaths.contains($0.path) }
-        guard !newURLs.isEmpty else { return }
-
-        pendingDownloadedImportURLs.append(contentsOf: newURLs)
-    }
-
-    func pruneStalePendingDownloadedImports() {
-        guard !pendingDownloadedImportURLs.isEmpty else { return }
-        let stillPendingPaths = Set(QueuePersistenceStore.loadPendingDownloadedImports().map(\.localURLPath))
-        pendingDownloadedImportURLs.removeAll { !stillPendingPaths.contains($0.path) }
-    }
-
-    func mergeBackgroundFetchedSongsIfNeeded() {
-        pruneStalePendingDownloadedImports()
-
-        let readySongs = BackgroundMetadataFetchManager.shared.drainReadySongs()
-        guard !readySongs.isEmpty else { return }
-
-        var existingSignatures = Set(songs.map(duplicateSignature(for:)))
-        var merged: [SongMetadata] = []
-        for song in readySongs {
-            let signature = duplicateSignature(for: song)
-            guard existingSignatures.insert(signature).inserted else { continue }
-            merged.append(song)
-        }
-
-        guard !merged.isEmpty else { return }
-        withAnimation(.easeOut(duration: 0.15)) {
-            songs.append(contentsOf: merged)
-        }
-    }
-
-    func processDownloadedImportQueueIfNeeded() {
-        guard !pendingDownloadedImportURLs.isEmpty else { return }
-        BackgroundMetadataFetchManager.shared.processPendingDownloadsInBackground()
-    }
-
     func importSongs(urls: [URL], stageInputFiles: Bool, preserveDownloadedFiles: Bool) async {
         guard !urls.isEmpty else { return }
 
@@ -390,10 +329,6 @@ extension MusicView {
 
             self.isImporting = false
             self.importPhaseTitle = "Importing Songs"
-        }
-
-        await MainActor.run {
-            processDownloadedImportQueueIfNeeded()
         }
     }
 }

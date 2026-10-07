@@ -128,62 +128,6 @@ extension DownloadViewModel {
         await SongMetadata.enrichDownloadedSong(initialSong, sourceTrack: sourceTrack)
     }
 
-    func downloadedFileLooksLikeAudio(_ url: URL) -> Bool {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
-        defer { try? handle.close() }
-
-        let header = (try? handle.read(upToCount: 32)) ?? Data()
-        guard !header.isEmpty else { return false }
-
-        let ext = url.pathExtension.lowercased()
-        switch ext {
-        case "opus":
-            guard header.count >= 36 else { return false }
-            return String(data: header.prefix(4), encoding: .ascii) == "OggS" &&
-                String(data: header[28..<36], encoding: .ascii) == "OpusHead"
-        case "flac":
-            return header.count >= 4 && String(data: header.prefix(4), encoding: .ascii) == "fLaC"
-        case "mp3":
-            if header.count >= 3 && String(data: header.prefix(3), encoding: .ascii) == "ID3" {
-                return true
-            }
-            guard header.count >= 2 else { return false }
-            return header[0] == 0xFF && (header[1] & 0xE0) == 0xE0
-        case "m4a", "mp4", "aac", "alac":
-            guard header.count >= 12 else { return false }
-            return String(data: header[4..<8], encoding: .ascii) == "ftyp"
-        case "wav", "wave":
-            guard header.count >= 12 else { return false }
-            return String(data: header.prefix(4), encoding: .ascii) == "RIFF" &&
-                String(data: header[8..<12], encoding: .ascii) == "WAVE"
-        default:
-            if header.count >= 4 && String(data: header.prefix(4), encoding: .ascii) == "fLaC" {
-                return true
-            }
-            if header.count >= 3 && String(data: header.prefix(3), encoding: .ascii) == "ID3" {
-                return true
-            }
-            if header.count >= 12 &&
-                String(data: header[4..<8], encoding: .ascii) == "ftyp" {
-                return true
-            }
-            if header.count >= 12 &&
-                String(data: header.prefix(4), encoding: .ascii) == "RIFF" &&
-                String(data: header[8..<12], encoding: .ascii) == "WAVE" {
-                return true
-            }
-            if header.count >= 36 &&
-                String(data: header.prefix(4), encoding: .ascii) == "OggS" &&
-                String(data: header[28..<36], encoding: .ascii) == "OpusHead" {
-                return true
-            }
-            if header.count >= 2 && header[0] == 0xFF && (header[1] & 0xE0) == 0xE0 {
-                return true
-            }
-            return false
-        }
-    }
-
     func beginBackgroundTaskIfNeeded() {
         guard backgroundDownloadsEnabled else { return }
         guard backgroundTaskID == .invalid else { return }

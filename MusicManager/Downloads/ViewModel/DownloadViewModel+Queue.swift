@@ -24,21 +24,8 @@ extension DownloadViewModel {
         PictureInPictureKeepAlive.shared.engage(for: self)
     }
 
-    func knownTrackName(for trackID: String) -> String? {
-        knownTracksByID[trackID].map { "\($0.name) - \($0.artistLine)" }
-    }
-
     var hasPendingOrActiveDownloads: Bool {
         !pendingQueue.isEmpty || !activeDownloadTrackIDs.isEmpty
-    }
-
-    func continuedTaskProgress() -> (completedUnits: Int64, totalUnits: Int64, subtitle: String) {
-        let total = max(totalQueueCount, 1)
-        let activeCredit = downloadProgressByTrackID.values.reduce(0, +)
-        let completedUnits = Int64((Double(completedQueueCount) + activeCredit) * 100)
-        let totalUnits = Int64(total * 100)
-        let finished = min(completedQueueCount, total)
-        return (min(completedUnits, totalUnits), totalUnits, "\(finished) of \(total) songs")
     }
 
     func cancelQueue() {

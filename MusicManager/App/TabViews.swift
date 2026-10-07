@@ -1,6 +1,5 @@
 import SwiftUI
 
-// MARK: - Legacy Tab Bar (Custom Floating Bar)
 struct LegacyTabBarView: View {
     @ObservedObject var manager: DeviceManager
     @Binding var songs: [SongMetadata]
@@ -60,7 +59,6 @@ struct LegacyTabBarView: View {
     }
 }
 
-// MARK: - Modern Tab View (Standard TabBar for iOS 26+)
 struct ModernTabView: View {
     @ObservedObject var manager: DeviceManager
     @Binding var songs: [SongMetadata]

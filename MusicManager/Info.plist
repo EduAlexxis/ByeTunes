@@ -45,18 +45,9 @@
 	</dict>
 	<key>UIFileSharingEnabled</key>
 	<true/>
-	<key>NSSupportsLiveActivities</key>
-	<true/>
-	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
-	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
-		<string>processing</string>
 		<string>audio</string>
-	</array>
-	<key>BGTaskSchedulerPermittedIdentifiers</key>
-	<array>
-		<string>com.EduAlexxis.MusicManager.metadataRefresh</string>
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Used to find your device's RemotePairing tunnel service on the local network when connecting over LocalDevVPN.</string>

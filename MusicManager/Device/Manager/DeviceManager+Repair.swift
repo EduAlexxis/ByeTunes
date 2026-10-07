@@ -365,14 +365,6 @@ extension DeviceManager {
                 if db != nil { sqlite3_close(db) }
             }
             
-            func executeLocalSQL(_ sql: String) {
-                var errMsg: UnsafeMutablePointer<CChar>?
-                if sqlite3_exec(db, sql, nil, nil, &errMsg) != SQLITE_OK {
-                    let error = errMsg.map { String(cString: $0) } ?? "Unknown error"
-                    sqlite3_free(errMsg)
-                    Logger.shared.log("[Doctor] SQL Error: \(error) for: \(sql)")
-                }
-            }
             
             for pid in ghostItemPids {
                 Logger.shared.log("[Doctor] DB Delete: Ghost PID \(pid)")

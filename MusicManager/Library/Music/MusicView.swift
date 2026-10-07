@@ -3,7 +3,6 @@ import UniformTypeIdentifiers
 
 struct MusicView: View {
     @ObservedObject var manager: DeviceManager
-    @ObservedObject var backgroundMetadataFetchManager = BackgroundMetadataFetchManager.shared
     @Binding var songs: [SongMetadata]
     @Binding var isInjecting: Bool
     @Binding var status: String
@@ -25,8 +24,6 @@ struct MusicView: View {
     @State var currentImportIndex = 0
     @State var totalImportCount = 0
     @State var importPhaseTitle = "Importing Songs"
-    @State var pendingDownloadedImportURLs: [URL] = []
-    @AppStorage("backgroundDownloadsEnabled") var backgroundDownloadsEnabled = false
     
     
     @State var showToast = false
@@ -88,17 +85,6 @@ struct MusicView: View {
         !songs.isEmpty && songs.count >= Self.largeBatchThreshold && !isImporting
     }
 
-    var pendingDownloadedMetadataCount: Int {
-        pendingDownloadedImportURLs.count
-    }
-
-    var isAutoFetchingMetadata: Bool {
-        backgroundDownloadsEnabled
-            && BackgroundMetadataFetchManager.isEnabled
-            && pendingDownloadedMetadataCount > 0
-            && backgroundMetadataFetchManager.isProcessing
-    }
-
     static let largeBatchThreshold = 50
     
     var body: some View {
@@ -135,13 +121,7 @@ struct MusicView: View {
                 VStack(spacing: 12) {
                     
                     Button {
-                        if isAutoFetchingMetadata {
-                            BackgroundMetadataFetchManager.shared.cancel()
-                        } else if backgroundDownloadsEnabled && pendingDownloadedMetadataCount > 0 {
-                            processDownloadedImportQueueIfNeeded()
-                        } else {
-                            showingMusicPicker = true
-                        }
+                        showingMusicPicker = true
                     } label: {
                         HStack {
                             if isImporting {
@@ -151,28 +131,10 @@ struct MusicView: View {
                                     .padding(.trailing, 4)
                                 Text("\(importPhaseTitle) \(currentImportIndex)/\(totalImportCount)...")
                                     .font(.body.weight(.medium))
-                            } else if isAutoFetchingMetadata {
-                                ZStack {
-                                    HStack(spacing: 0) {
-                                        ProgressView()
-                                            .scaleEffect(0.8)
-                                            .tint(.white)
-                                            .padding(.trailing, 4)
-                                        Text("Fetching Metadata for \(pendingDownloadedMetadataCount) Song\(pendingDownloadedMetadataCount == 1 ? "" : "s")...")
-                                            .font(.body.weight(.medium))
-                                    }
-                                    HStack {
-                                        Spacer()
-                                        Image(systemName: "xmark.circle.fill")
-                                            .font(.body)
-                                            .opacity(0.8)
-                                    }
-                                }
-                                .frame(maxWidth: .infinity)
                             } else {
-                                Image(systemName: backgroundDownloadsEnabled && pendingDownloadedMetadataCount > 0 ? "sparkles" : "plus")
+                                Image(systemName: "plus")
                                     .font(.body.weight(.medium))
-                                Text(backgroundDownloadsEnabled && pendingDownloadedMetadataCount > 0 ? "\(pendingDownloadedMetadataCount) Songs Ready for Metadata" : "Add Songs")
+                                Text("Add Songs")
                                     .font(.body.weight(.medium))
                             }
                         }
@@ -491,18 +453,6 @@ struct MusicView: View {
                 handleMusicImport(urls: urls)
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .importDownloadedSongs)) { notification in
-            let urls = (notification.object as? [URL]) ?? []
-            queueDownloadedImports(urls)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .backgroundMetadataFetchCompleted)) { _ in
-            mergeBackgroundFetchedSongsIfNeeded()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
-            restorePendingDownloadedImportsIfNeeded()
-            mergeBackgroundFetchedSongsIfNeeded()
-            BackgroundMetadataFetchManager.shared.processPendingDownloadsInBackground()
-        }
         .sheet(isPresented: $showingBatchMetadataEditor) {
             BatchMetadataEditorSheet(songs: $songs)
         }
@@ -528,11 +478,6 @@ struct MusicView: View {
             }
         } message: {
             Text("Enter a name for your new playlist")
-        }
-        .onAppear {
-            restorePendingDownloadedImportsIfNeeded()
-            mergeBackgroundFetchedSongsIfNeeded()
-            BackgroundMetadataFetchManager.shared.processPendingDownloadsInBackground()
         }
         .sheet(isPresented: $showingPlaylistSheet) {
             playlistSelectionSheet

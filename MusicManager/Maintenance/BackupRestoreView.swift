@@ -363,7 +363,6 @@ struct BackupRestoreView: View {
         }
     }
 
-    // MARK: - Snapshot Helpers
     private func createSnapshotBackup(full: Bool) {
         isSnapshotBusy = true
         isCreatingSnapshot = true
@@ -437,7 +436,6 @@ struct BackupRestoreView: View {
         }
     }
 
-    // MARK: - Relocated Popups
     private var snapshotProgressPopup: some View {
         ZStack {
             Color.black.opacity(0.28)
@@ -496,14 +494,5 @@ struct BackupRestoreView: View {
     }
 
 
-}
-
-struct ActivityView: UIViewControllerRepresentable {
-    let activityItems: [Any]
-    let applicationActivities: [UIActivity]? = nil
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: activityItems, applicationActivities: applicationActivities)
-    }
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 

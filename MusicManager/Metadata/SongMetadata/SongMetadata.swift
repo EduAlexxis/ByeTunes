@@ -99,22 +99,6 @@ struct SongMetadata: Identifiable {
         audioFormatLabel == "FLAC" || audioFormatLabel == "ALAC"
     }
 
-    var appleMetadataCoverageSummary: String {
-        let flags = [
-            "storeId=\(storeId)",
-            "artistId=\(artistId)",
-            "albumId=\(playlistId)",
-            "composerId=\(composerId)",
-            "genreId=\(genreStoreId)",
-            "isrc=\(hasAppleISRC ? (xid ?? "") : "none")",
-            "releaseDate=\(releaseDate)",
-            "traits=\(appleMusicAudioTraits.isEmpty ? "none" : appleMusicAudioTraits.joined(separator: ","))",
-            "adm=\(isAppleDigitalMaster)",
-            "mfit=\(isMasteredForItunes)"
-        ]
-        return flags.joined(separator: ", ")
-    }
-
     var appleMetadataMatchTier: String {
         if hasAppleCatalogIdentity && hasAppleArtistIdentity && hasAppleAlbumIdentity && hasAppleISRC {
             return "full"

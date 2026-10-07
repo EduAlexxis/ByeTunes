@@ -6,22 +6,6 @@ import AVFoundation
 import CommonCrypto
 import SafariServices
 
-struct AppleMusicAlbumSearchResults: Decodable {
-    let albums: AppleMusicAlbumPage?
-}
-
-struct AppleMusicAlbumSearchError: Decodable {
-    let id: String?
-    let title: String?
-    let detail: String?
-    let status: String?
-    let code: String?
-}
-
-struct AppleMusicAlbumPage: Decodable {
-    let data: [AppleMusicAlbumResult]
-}
-
 struct AppleMusicAlbumResult: Decodable {
     let id: String
     let attributes: AppleMusicAlbumResultAttributes
@@ -31,14 +15,6 @@ struct AppleMusicAlbumResultAttributes: Decodable {
     let name: String
     let artistName: String
     let artwork: AppleMusicAPI.AppleMusicArtwork?
-}
-
-struct AppleMusicPlaylistSearchResults: Decodable {
-    let playlists: AppleMusicPlaylistPage?
-}
-
-struct AppleMusicPlaylistPage: Decodable {
-    let data: [AppleMusicPlaylistResult]
 }
 
 struct AppleMusicAlbumDetailsData: Decodable {
