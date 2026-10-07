@@ -13,15 +13,6 @@ extension DownloadViewModel {
         for task in foregroundWorkerTasks.values {
             task.cancel()
         }
-        let backgroundActiveIDs = activeDownloadTrackIDs.subtracting(foregroundWorkerTasks.keys)
-        if backgroundDownloadsEnabled, !backgroundActiveIDs.isEmpty {
-            pausedBackgroundTrackIDs.formUnion(backgroundActiveIDs)
-            Task {
-                for activeID in backgroundActiveIDs {
-                    await BackgroundAudioDownloadManager.shared.cancelDownloads(forTrackID: activeID)
-                }
-            }
-        }
         log("Download queue paused by user.")
     }
 
@@ -30,7 +21,6 @@ extension DownloadViewModel {
         isPaused = false
         log("Download queue resumed by user.")
         Task { await processQueueIfNeeded() }
-        ContinuedDownloadTask.shared.startIfNeeded(for: self)
         PictureInPictureKeepAlive.shared.engage(for: self)
     }
 
@@ -69,17 +59,6 @@ extension DownloadViewModel {
         totalQueueCount = 0
         completedQueueCount = 0
         isPaused = false
-        pausedBackgroundTrackIDs.removeAll()
-        if backgroundDownloadsEnabled, !activeIDsToCancel.isEmpty {
-            for activeID in activeIDsToCancel {
-                cancelledBackgroundTrackIDs.insert(activeID)
-            }
-            Task {
-                for activeID in activeIDsToCancel {
-                    await BackgroundAudioDownloadManager.shared.cancelDownloads(forTrackID: activeID)
-                }
-            }
-        }
         log("Download queue cancelled and cleared by user.")
         syncQueuePersistence()
     }
@@ -238,12 +217,6 @@ extension DownloadViewModel {
         if totalQueueCount > completedQueueCount {
             totalQueueCount = max(0, totalQueueCount - 1)
         }
-        if backgroundDownloadsEnabled {
-            cancelledBackgroundTrackIDs.insert(trackID)
-            Task {
-                await BackgroundAudioDownloadManager.shared.cancelDownloads(forTrackID: trackID)
-            }
-        }
         syncQueuePersistence()
     }
 
@@ -257,16 +230,6 @@ extension DownloadViewModel {
         queueOrder.removeAll { failedIDs.contains($0) }
         if totalQueueCount > completedQueueCount {
             totalQueueCount = max(completedQueueCount, totalQueueCount - failedIDs.count)
-        }
-        if backgroundDownloadsEnabled {
-            for id in failedIDs {
-                cancelledBackgroundTrackIDs.insert(id)
-            }
-            Task {
-                for id in failedIDs {
-                    await BackgroundAudioDownloadManager.shared.cancelDownloads(forTrackID: id)
-                }
-            }
         }
         syncQueuePersistence()
     }

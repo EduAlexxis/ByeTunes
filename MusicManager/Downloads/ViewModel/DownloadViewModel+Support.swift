@@ -91,24 +91,6 @@ extension DownloadViewModel {
         return "Download failed. Please try again."
     }
 
-    func hasHandedOffDownloadedFile(trackID: String) -> Bool {
-        QueuePersistenceStore.loadPendingDownloadedImports().contains { item in
-            item.trackID == trackID
-        }
-    }
-
-    func handOffDownloadedFileForMainImport(_ fileURL: URL, track: DownloadTrack) {
-        var pending = QueuePersistenceStore.loadPendingDownloadedImports()
-        if !pending.contains(where: { $0.localURLPath == fileURL.path || $0.trackID == track.id }) {
-            pending.append(.init(localURLPath: fileURL.path, trackID: track.id, track: PersistedDownloadTrack(track: track)))
-            QueuePersistenceStore.savePendingDownloadedImports(pending)
-            NotificationCenter.default.post(name: .importDownloadedSongs, object: [fileURL])
-            BackgroundMetadataFetchManager.shared.processPendingDownloadsInBackground()
-        } else {
-            log("Download handoff already exists for track \(track.id); skipping notification.")
-        }
-    }
-
     func updateVisibleDownloadProgress(_ progress: Double, speedBps: Double, trackID: String) {
         guard activeDownloadTrackIDs.contains(trackID) else { return }
         downloadProgressByTrackID[trackID] = progress
@@ -129,7 +111,7 @@ extension DownloadViewModel {
         queueOrder = snapshot.queueOrder.filter { restoredTracks[$0] != nil }
         totalQueueCount = snapshot.totalQueueCount
         completedQueueCount = snapshot.completedQueueCount
-        restoredActiveTrackIDs = snapshot.activeIDs.filter { restoredTracks[$0] != nil }
+        let interruptedIDs = snapshot.activeIDs.filter { restoredTracks[$0] != nil }
 
         for id in snapshot.failedIDs where restoredTracks[id] != nil {
             trackStates[id] = .failed
@@ -140,24 +122,19 @@ extension DownloadViewModel {
             trackStates[id] = .done
         }
 
-        let pendingIDs = snapshot.pendingIDs.filter { restoredTracks[$0] != nil }
+        let pendingIDs = interruptedIDs + snapshot.pendingIDs.filter { restoredTracks[$0] != nil && !interruptedIDs.contains($0) }
         pendingQueue = pendingIDs.compactMap { id in
             trackStates[id] = .queued
             return restoredTracks[id]
         }
 
-        if totalQueueCount == 0 && (!pendingQueue.isEmpty || !restoredActiveTrackIDs.isEmpty || !snapshot.failedIDs.isEmpty) {
-            totalQueueCount = pendingQueue.count + snapshot.failedIDs.count + restoredActiveTrackIDs.count
+        if totalQueueCount == 0 && (!pendingQueue.isEmpty || !snapshot.failedIDs.isEmpty) {
+            totalQueueCount = pendingQueue.count + snapshot.failedIDs.count
         }
         completedQueueCount = min(completedQueueCount, totalQueueCount)
 
-        if !restoredActiveTrackIDs.isEmpty {
-            log("Found \(restoredActiveTrackIDs.count) active download(s) to recover from the last session.")
-        } else if !pendingQueue.isEmpty {
+        if !pendingQueue.isEmpty {
             log("Restored \(pendingQueue.count) queued download(s) from last session.")
-            if backgroundDownloadsEnabled {
-                primeBackgroundPreparation()
-            }
             Task { await processQueueIfNeeded() }
         } else if !snapshot.failedIDs.isEmpty {
             log("Restored \(snapshot.failedIDs.count) failed download(s) from last session.")

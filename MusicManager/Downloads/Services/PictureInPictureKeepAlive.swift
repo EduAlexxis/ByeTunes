@@ -15,12 +15,14 @@ final class PictureInPictureKeepAlive: NSObject {
     private var frameTimer: Timer?
     private var possibleObservation: NSKeyValueObservation?
     private var resignObserver: NSObjectProtocol?
+    private var silencePlayer: AVAudioPlayer?
+    private var interruptionObserver: NSObjectProtocol?
     private weak var viewModel: DownloadViewModel?
 
     private(set) var isEngaged = false
 
     var isEnabled: Bool {
-        UserDefaults.standard.bool(forKey: "pipKeepAliveEnabled")
+        UserDefaults.standard.bool(forKey: "backgroundDownloadsEnabled")
     }
 
     var isPictureInPictureActive: Bool {
@@ -48,6 +50,7 @@ final class PictureInPictureKeepAlive: NSObject {
             return
         }
 
+        startSilentAudio()
         configureLayer()
         configureController()
         startFrameTimer()
@@ -78,6 +81,7 @@ final class PictureInPictureKeepAlive: NSObject {
         }
         resignObserver = nil
 
+        stopSilentAudio()
         pipController?.stopPictureInPicture()
         pipController = nil
         displayLayer.flushAndRemoveImage()
@@ -87,6 +91,68 @@ final class PictureInPictureKeepAlive: NSObject {
 
         try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
         Logger.shared.log("[PiP] Keep-alive disengaged")
+    }
+
+    private func startSilentAudio() {
+        guard let player = try? AVAudioPlayer(data: Self.silentWaveData()) else {
+            Logger.shared.log("[PiP] Could not create the silent audio player")
+            return
+        }
+        player.numberOfLoops = -1
+        player.volume = 1
+        player.prepareToPlay()
+        player.play()
+        silencePlayer = player
+
+        interruptionObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] notification in
+            let typeValue = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+            MainActor.assumeIsolated {
+                guard let self, typeValue == AVAudioSession.InterruptionType.ended.rawValue else { return }
+                try? AVAudioSession.sharedInstance().setActive(true)
+                self.silencePlayer?.play()
+            }
+        }
+        Logger.shared.log("[PiP] Silent audio started")
+    }
+
+    private func stopSilentAudio() {
+        silencePlayer?.stop()
+        silencePlayer = nil
+        if let interruptionObserver {
+            NotificationCenter.default.removeObserver(interruptionObserver)
+        }
+        interruptionObserver = nil
+    }
+
+    private static func silentWaveData() -> Data {
+        let sampleRate: UInt32 = 8000
+        let dataSize: UInt32 = sampleRate * 2
+        var data = Data()
+        func append32(_ value: UInt32) {
+            withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
+        }
+        func append16(_ value: UInt16) {
+            withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
+        }
+        data.append("RIFF".data(using: .ascii)!)
+        append32(36 + dataSize)
+        data.append("WAVE".data(using: .ascii)!)
+        data.append("fmt ".data(using: .ascii)!)
+        append32(16)
+        append16(1)
+        append16(1)
+        append32(sampleRate)
+        append32(sampleRate * 2)
+        append16(2)
+        append16(16)
+        data.append("data".data(using: .ascii)!)
+        append32(dataSize)
+        data.append(Data(count: Int(dataSize)))
+        return data
     }
 
     private func configureLayer() {
@@ -208,8 +274,5 @@ extension PictureInPictureKeepAlive: AVPictureInPictureControllerDelegate {
 
     nonisolated func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
         Logger.shared.log("[PiP] Window stopped")
-        Task { @MainActor in
-            DownloadViewModel.shared.pictureInPictureStopped()
-        }
     }
 }

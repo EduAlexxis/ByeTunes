@@ -80,12 +80,6 @@ struct BackendDownloadOutcome {
     let backendLabel: String
 }
 
-struct PreparedBackgroundDownloadPlan {
-    let candidates: [BackendCandidate]
-    let suggestedName: String
-    let fallbackExtension: String
-}
-
 
 enum DownloadPlatform: String {
     case appleMusic

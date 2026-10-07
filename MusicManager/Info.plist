@@ -57,7 +57,6 @@
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>com.EduAlexxis.MusicManager.metadataRefresh</string>
-		<string>com.EduAlexxis.MusicManager.download.*</string>
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Used to find your device's RemotePairing tunnel service on the local network when connecting over LocalDevVPN.</string>

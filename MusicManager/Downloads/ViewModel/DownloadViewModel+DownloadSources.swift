@@ -153,10 +153,6 @@ extension DownloadViewModel {
         return UserDefaults.standard.string(forKey: "yoinkifyFormat") ?? "flac"
     }
 
-    func isStoppedByUser(trackID: String) -> Bool {
-        pausedBackgroundTrackIDs.contains(trackID) || cancelledBackgroundTrackIDs.contains(trackID)
-    }
-
     func executeCandidatesUntilSuccess(
         _ candidates: [BackendCandidate],
         trackID: String,
@@ -170,7 +166,7 @@ extension DownloadViewModel {
         var lastError: Error = DownloadError.mappingFailed("All backend requests failed.")
 
         for candidate in candidates {
-            guard !Task.isCancelled, !isStoppedByUser(trackID: trackID) else {
+            guard !Task.isCancelled else {
                 throw CancellationError()
             }
             do {
@@ -200,7 +196,7 @@ extension DownloadViewModel {
                 if Task.isCancelled {
                     throw error
                 }
-                if isStoppedByUser(trackID: trackID) || (error as? URLError)?.code == .cancelled {
+                if (error as? URLError)?.code == .cancelled {
                     throw CancellationError()
                 }
                 lastError = error
@@ -229,36 +225,9 @@ extension DownloadViewModel {
         applyZarzHeaders(to: &request)
         log("Requesting \(redactedDownloadURLString(request.url))")
 
-        let shouldUseBackgroundTransfer = backgroundDownloadsEnabled && !isAppActive
-        log("executeDownloadRequest track=\(trackID) backend=\(backendLabel) depth=\(depth) method=\(request.httpMethod ?? "GET") background=\(shouldUseBackgroundTransfer)")
-        let data: Data
-        let response: URLResponse
-        let backgroundFileURL: URL?
-        if shouldUseBackgroundTransfer {
-            let backgroundResult = try await BackgroundAudioDownloadManager.shared.download(
-                request: request,
-                context: BackgroundDownloadRequestContext(
-                    trackID: trackID,
-                    backendLabel: backendLabel,
-                    suggestedName: suggestedName,
-                    fallbackExtension: fallbackExtension
-                ),
-                progress: { [weak self] progress, speedBps in
-                    self?.updateVisibleDownloadProgress(progress, speedBps: speedBps, trackID: trackID)
-                }
-            )
-            backgroundFileURL = backgroundResult.fileURL
-            data = try await Task.detached(priority: .utility) {
-                try Data(contentsOf: backgroundResult.fileURL, options: .mappedIfSafe)
-            }.value
-            response = backgroundResult.response
-        } else {
-            let fetched = try await fetchDataWithProgress(for: request) { [weak self] progress, speedBps in
-                self?.updateVisibleDownloadProgress(progress, speedBps: speedBps, trackID: trackID)
-            }
-            backgroundFileURL = nil
-            data = fetched.0
-            response = fetched.1
+        log("executeDownloadRequest track=\(trackID) backend=\(backendLabel) depth=\(depth) method=\(request.httpMethod ?? "GET")")
+        let (data, response) = try await fetchDataWithProgress(for: request) { [weak self] progress, speedBps in
+            self?.updateVisibleDownloadProgress(progress, speedBps: speedBps, trackID: trackID)
         }
         try validateHTTP(response: response, data: data)
 
@@ -303,10 +272,6 @@ extension DownloadViewModel {
         }
 
         recordQualityNoteIfNeeded(trackID: trackID, requestedFormat: requestedFormat, httpResponse: httpResponse)
-
-        if let backgroundFileURL {
-            return backgroundFileURL
-        }
 
         let fileExtension = DownloadSupport.fileExtension(for: mimeType, fallback: fallbackExtension)
         return try saveDownloadedData(data, suggestedName: suggestedName, fileExtension: fileExtension)

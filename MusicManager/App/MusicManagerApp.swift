@@ -30,17 +30,7 @@ final class MusicManagerAppDelegate: NSObject, UIApplicationDelegate {
             return
         }
 
-        guard identifier == BackgroundAudioDownloadManager.sessionIdentifier else {
-            completionHandler()
-            return
-        }
-
-        guard UserDefaults.standard.bool(forKey: "backgroundDownloadsEnabled") else {
-            completionHandler()
-            return
-        }
-
-        BackgroundAudioDownloadManager.shared.setBackgroundEventsCompletionHandler(completionHandler)
+        completionHandler()
     }
 }
 

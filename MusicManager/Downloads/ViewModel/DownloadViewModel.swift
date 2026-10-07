@@ -26,7 +26,6 @@ final class DownloadViewModel: ObservableObject {
     }
     var isAppActive = UIApplication.shared.applicationState != .background
     var lifecycleObservers: [NSObjectProtocol] = []
-    var pendingBackgroundHandoffTrackIDs: Set<String> = []
     let downloadStartPacer = DownloadStartPacer(minSpacing: .milliseconds(300))
 
     var shouldShowPauseButton: Bool {
@@ -61,7 +60,6 @@ final class DownloadViewModel: ObservableObject {
     var knownTracksByID: [String: DownloadTrack] = [:]
     var queueOrder: [String] = []
     var albumTrackIDs: [String: [String]] = [:]
-    var restoredActiveTrackIDs: [String] = []
     var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
     @Published var resolvingAlbumIDs: Set<String> = []
     var lastSearchQuery = ""
@@ -79,18 +77,10 @@ final class DownloadViewModel: ObservableObject {
     var previewEndObserver: NSObjectProtocol?
     var previewStatusObserver: NSKeyValueObservation?
     var cachedPreviewURLs: [String: URL] = [:]
-    var preparedBackgroundPlansByTrackID: [String: PreparedBackgroundDownloadPlan] = [:]
-    var backgroundPreparationTasks: [String: Task<PreparedBackgroundDownloadPlan?, Never>] = [:]
-    var cancelledBackgroundTrackIDs = Set<String>()
-    var pausedBackgroundTrackIDs = Set<String>()
     var metadataFetchingTrackIDs = Set<String>()
 
     var backgroundDownloadsEnabled: Bool {
         UserDefaults.standard.bool(forKey: "backgroundDownloadsEnabled")
-    }
-
-    var canAdvanceBackgroundQueueNow: Bool {
-        true
     }
 
     init() {
@@ -103,9 +93,6 @@ final class DownloadViewModel: ObservableObject {
                 self?.appDidEnterBackground()
             }
         ]
-        if backgroundDownloadsEnabled {
-            Task { await recoverBackgroundDownloadIfNeeded() }
-        }
     }
 
     var queueProgress: Double {
