@@ -6,6 +6,7 @@ import AVFoundation
 import CommonCrypto
 import SafariServices
 
+// MARK: - Workers
 extension DownloadViewModel {
     func processQueueIfNeeded() async {
         guard !isPaused else { return }

@@ -2,6 +2,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct MusicView: View {
+
+    // MARK: - State
     @ObservedObject var manager: DeviceManager
     @Binding var songs: [SongMetadata]
     @Binding var isInjecting: Bool
@@ -85,8 +87,10 @@ struct MusicView: View {
         !songs.isEmpty && songs.count >= Self.largeBatchThreshold && !isImporting
     }
 
+    // MARK: - Constants
     static let largeBatchThreshold = 50
     
+    // MARK: - Body
     var body: some View {
         ZStack(alignment: .bottom) {
             Color(.systemGroupedBackground)

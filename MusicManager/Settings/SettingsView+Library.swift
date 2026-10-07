@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+// MARK: - Library
 extension SettingsView {
     var repairSection: some View {
         VStack(alignment: .leading, spacing: 12) {

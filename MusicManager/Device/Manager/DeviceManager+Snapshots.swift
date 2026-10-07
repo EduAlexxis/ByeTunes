@@ -5,6 +5,7 @@ import UIKit
 import CommonCrypto
 import SQLite3
 
+// MARK: - Snapshots
 extension DeviceManager {
     func removeSupersededSnapshots(in root: URL, keeping newest: URL, isFull: Bool) {
         let fm = FileManager.default

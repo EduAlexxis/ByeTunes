@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 import UIKit
 import ImageIO
 
+// MARK: - Controls
 extension DeviceLibraryBrowserView {
     func topBarIconButton(systemName: String, showsProgress: Bool = false) -> some View {
         ZStack {

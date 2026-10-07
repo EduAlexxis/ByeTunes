@@ -3,6 +3,7 @@ import SQLite3
 import CommonCrypto
 import UIKit
 
+// MARK: - Color Analysis
 extension MediaLibraryBuilder {
     static func colorAnalysisJSON(for song: SongMetadata, version: DatabaseVersion) -> String {
         guard version.supportsIOS264ArtworkDisplay else {

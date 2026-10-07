@@ -6,6 +6,7 @@ import AVFoundation
 import CommonCrypto
 import SafariServices
 
+// MARK: - Support
 extension DownloadViewModel {
     func uniqueAlbums(_ albums: [DownloadAlbum]) -> [DownloadAlbum] {
         var seen = Set<String>()

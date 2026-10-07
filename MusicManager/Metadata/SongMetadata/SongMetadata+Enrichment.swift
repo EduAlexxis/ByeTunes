@@ -6,6 +6,7 @@ import CommonCrypto
 import CoreMedia
 import AudioToolbox
 
+// MARK: - Enrichment
 extension SongMetadata {
     private static func deezerTrackID(from trackID: String) -> Int? {
         guard trackID.hasPrefix("deezer-") else { return nil }

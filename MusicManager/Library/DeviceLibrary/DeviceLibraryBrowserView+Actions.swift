@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 import UIKit
 import ImageIO
 
+// MARK: - Actions
 extension DeviceLibraryBrowserView {
     func beginEditing(_ song: DeviceManager.ExportableSongInfo) {
         editingOriginalSong = song

@@ -5,6 +5,7 @@ import UIKit
 import CommonCrypto
 import SQLite3
 
+// MARK: - Pairing
 extension DeviceManager {
     func refreshExpectedPairingFileState() {
         hasValidExpectedPairingFile = validateExpectedPairingFile()

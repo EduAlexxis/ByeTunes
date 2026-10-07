@@ -6,6 +6,7 @@ import AVFoundation
 import CommonCrypto
 import SafariServices
 
+// MARK: - Metadata Catalog
 extension DownloadViewModel {
     func searchAlbums(query: String, limit: Int, offset: Int = 0) async -> [AppleMusicAlbumResult] {
         let fallback = await AppleMusicAPI.shared.searchAlbumsPublic(query: query, limit: limit, offset: offset)

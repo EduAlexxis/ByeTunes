@@ -6,6 +6,7 @@ import AVFoundation
 import CommonCrypto
 import SafariServices
 
+// MARK: - Queue
 extension DownloadViewModel {
     func pauseQueue() {
         guard !isPaused else { return }

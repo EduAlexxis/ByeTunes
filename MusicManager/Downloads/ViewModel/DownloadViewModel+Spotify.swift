@@ -6,6 +6,7 @@ import AVFoundation
 import CommonCrypto
 import SafariServices
 
+// MARK: - Spotify
 extension DownloadViewModel {
     func fetchSpotifyToken() async -> String? {
         guard let url = URL(string: "https://open.spotify.com/get_access_token?reason=transport&productType=web_player") else { return nil }

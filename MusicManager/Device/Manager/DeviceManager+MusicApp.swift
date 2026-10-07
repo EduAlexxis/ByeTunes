@@ -5,6 +5,7 @@ import UIKit
 import CommonCrypto
 import SQLite3
 
+// MARK: - Music App
 extension DeviceManager {
     var killMusicBeforeInjectEnabled: Bool {
         return UserDefaults.standard.object(forKey: "killMusicBeforeInject") as? Bool ?? true

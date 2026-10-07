@@ -6,6 +6,7 @@ import AVFoundation
 import CommonCrypto
 import SafariServices
 
+// MARK: - Search
 extension DownloadViewModel {
     func search(query: String, provider: DownloadView.SearchProvider) async {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -5,6 +5,7 @@ import UIKit
 import CommonCrypto
 import SQLite3
 
+// MARK: - Library Browse
 extension DeviceManager {
     func fetchDatabaseSnapshots(completion: @escaping ([DatabaseSnapshotInfo]) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {

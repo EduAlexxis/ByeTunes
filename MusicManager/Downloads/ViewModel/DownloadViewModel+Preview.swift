@@ -6,6 +6,7 @@ import AVFoundation
 import CommonCrypto
 import SafariServices
 
+// MARK: - Preview
 extension DownloadViewModel {
     func togglePreview(for track: DownloadTrack) {
         Task { @MainActor in

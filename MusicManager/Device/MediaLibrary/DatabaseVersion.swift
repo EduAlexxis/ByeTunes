@@ -3,6 +3,7 @@ import SQLite3
 import CommonCrypto
 import UIKit
 
+// MARK: - Database Version Support
 struct DatabaseVersion: Equatable {
     enum SchemaFamily: Equatable {
         case ios16

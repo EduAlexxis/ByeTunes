@@ -29,6 +29,7 @@ struct iTunesSong: Codable, Identifiable {
     let discCount: Int?
 }
 
+// MARK: - i Tunes
 extension SongMetadata {
     static func searchiTunes(query: String, limit: Int = 10) async -> [iTunesSong] {
         let region = UserDefaults.standard.string(forKey: "storeRegion") ?? "US"

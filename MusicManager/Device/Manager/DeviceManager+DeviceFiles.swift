@@ -5,6 +5,7 @@ import UIKit
 import CommonCrypto
 import SQLite3
 
+// MARK: - Device Files
 extension DeviceManager {
     func getDeviceProductVersion() -> String? {
         var lockdownd: LockdowndClientHandle?

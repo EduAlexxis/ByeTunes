@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 import UIKit
 import ImageIO
 
+// MARK: - Rows
 extension DeviceLibraryBrowserView {
     func songRow(_ song: DeviceManager.ExportableSongInfo) -> some View {
         HStack(spacing: 10) {

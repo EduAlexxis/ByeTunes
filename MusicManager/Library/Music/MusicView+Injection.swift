@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+// MARK: - Injection
 extension MusicView {
     func injectSongs() {
         guard !songs.isEmpty else { return }

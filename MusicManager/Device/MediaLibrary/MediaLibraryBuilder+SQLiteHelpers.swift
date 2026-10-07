@@ -3,6 +3,7 @@ import SQLite3
 import CommonCrypto
 import UIKit
 
+// MARK: - SQLite Helpers
 extension MediaLibraryBuilder {
     static func generateRingtoneIntegrity(filename: String) -> String {
         

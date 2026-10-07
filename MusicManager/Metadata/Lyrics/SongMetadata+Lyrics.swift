@@ -6,6 +6,7 @@ import CommonCrypto
 import CoreMedia
 import AudioToolbox
 
+// MARK: - Lyrics
 extension SongMetadata {
     static func cleanLyrics(_ rawLyrics: String, title: String? = nil, artist: String? = nil) -> String {
         var cleaned = rawLyrics.replacingOccurrences(of: #"\[([a-z]+):.*\]"#, with: "", options: [.regularExpression, .caseInsensitive])

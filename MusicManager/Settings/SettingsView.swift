@@ -2,6 +2,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
+
+    // MARK: - State
     @Environment(\.openURL) var openURL
     @ObservedObject var manager: DeviceManager
     @Binding var status: String
@@ -36,6 +38,7 @@ struct SettingsView: View {
     @AppStorage("downloadSearchProvider") var downloadSearchProvider = DownloadSearchProviderOption.deezer.rawValue
     @AppStorage("yoinkifyFormat") var yoinkifyFormat = "flac"
 
+    // MARK: - Body
     var body: some View {
         NavigationStack {
         ZStack(alignment: .bottom) {

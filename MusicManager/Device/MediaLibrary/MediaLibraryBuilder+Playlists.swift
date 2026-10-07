@@ -3,6 +3,7 @@ import SQLite3
 import CommonCrypto
 import UIKit
 
+// MARK: - Playlists
 extension MediaLibraryBuilder {
     static func createPlaylist(db: OpaquePointer?, playlistName: String, songPids: [Int64]) throws {
         let containerPid = Int64.random(in: 1_000_000_000...9_999_999_999_999)

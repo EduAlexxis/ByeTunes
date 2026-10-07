@@ -51,6 +51,7 @@ struct DeviceLibraryBrowserView: View {
         var id: Int64 { pid }
     }
 
+    // MARK: - State
     @ObservedObject var manager: DeviceManager
     @Environment(\.dismiss) var dismiss
     @Environment(\.colorScheme) var colorScheme
@@ -112,6 +113,7 @@ struct DeviceLibraryBrowserView: View {
 
     let maxConcurrentArtworkLoads = 2
 
+    // MARK: - Appearance
     var pageBackground: Color { Color(.systemGroupedBackground) }
     var panelBackground: Color { Color(.secondarySystemBackground) }
     var strongTextColor: Color { Color.primary }
@@ -119,6 +121,7 @@ struct DeviceLibraryBrowserView: View {
     var hairlineColor: Color { Color(.separator).opacity(colorScheme == .dark ? 0.55 : 0.85) }
     var controlFillColor: Color { Color(.systemBackground) }
 
+    // MARK: - Filtering and Grouping
     var filteredSongs: [DeviceManager.ExportableSongInfo] {
         let genreFiltered = selectedGenre == Self.allGenresOption
             ? songs
@@ -264,6 +267,7 @@ struct DeviceLibraryBrowserView: View {
         }
     }
 
+    // MARK: - Body
     var body: some View {
         NavigationStack {
             ZStack {

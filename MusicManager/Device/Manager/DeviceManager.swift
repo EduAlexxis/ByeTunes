@@ -65,6 +65,8 @@ extension DispatchSemaphore {
 }
 
 class DeviceManager: ObservableObject {
+
+    // MARK: - Nested Types
     struct DatabaseSnapshotInfo: Identifiable {
         var id: String { folderName }
         let folderName: String
@@ -142,6 +144,7 @@ class DeviceManager: ObservableObject {
         let artworkData: Data?
     }
 
+    // MARK: - Connection State
     @Published var heartbeatReady: Bool = false
     @Published var connectionStatus: String = "Disconnected"
     @Published var hasValidExpectedPairingFile: Bool = false
@@ -204,6 +207,7 @@ class DeviceManager: ObservableObject {
         return collapsed.isEmpty ? "Exported Song" : collapsed
     }
     
+    // MARK: - Pairing Files
     var pairingFile: URL {
         regularPairingFile
     }
@@ -260,6 +264,7 @@ class DeviceManager: ObservableObject {
         return provider != nil
     }
     
+    // MARK: - Snapshot Storage
     var snapshotsDirectoryURL: URL {
         if let custom = customSnapshotsDirectory() {
             return custom
@@ -332,6 +337,7 @@ class DeviceManager: ObservableObject {
     let snapshotArtworkDirectory = "Artwork/Originals"
     let snapshotFullBackupDirectory = ".iTunesFullBackup"
     
+    // MARK: - Setup
     private init() {
         Logger.shared.log("===========================================")
         Logger.shared.log("[DeviceManager] BUILD VERSION: \(BUILD_VERSION)")

@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 import UIKit
 import ImageIO
 
+// MARK: - Playlists
 extension DeviceLibraryBrowserView {
     func playlistRowContent(_ playlist: PlaylistEntry) -> some View {
         HStack(spacing: 16) {

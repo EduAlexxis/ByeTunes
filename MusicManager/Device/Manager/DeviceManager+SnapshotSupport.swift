@@ -5,6 +5,7 @@ import UIKit
 import CommonCrypto
 import SQLite3
 
+// MARK: - Snapshot Support
 extension DeviceManager {
     func restoreSnapshotDirectory(_ snapshotDir: URL, progress: SnapshotProgressHandler? = nil, completion: @escaping (Bool, String) -> Void) {
         progress?("Preparing restore...", nil)

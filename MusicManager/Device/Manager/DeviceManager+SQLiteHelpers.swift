@@ -5,6 +5,7 @@ import UIKit
 import CommonCrypto
 import SQLite3
 
+// MARK: - SQLite Helpers
 extension DeviceManager {
     func itemPid(forRemoteFilename filename: String, db: OpaquePointer?) -> Int64? {
         var stmt: OpaquePointer?

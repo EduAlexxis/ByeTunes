@@ -2,6 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 
+// MARK: - OnboardingView
 struct OnboardingView: View {
 
     @ObservedObject var manager: DeviceManager
@@ -97,6 +98,7 @@ struct OnboardingView: View {
         })
     }
 
+    // MARK: - Connect Card
     @ViewBuilder
     private var connectCard: some View {
         VStack(spacing: 22) {
@@ -191,6 +193,7 @@ struct OnboardingView: View {
         )
     }
 
+    // MARK: - Pairing Import
     func handlePairingImport(url: URL?) {
         guard let url = url else { return }
         do {
@@ -228,6 +231,7 @@ struct OnboardingView: View {
 }
 
 
+// MARK: - StepRow
 struct StepRow: View {
     let number: String
     let text: String

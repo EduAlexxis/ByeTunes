@@ -21,6 +21,7 @@ struct PictureInPictureSnapshot {
     let states: [String: DownloadTrackState]
 }
 
+// MARK: - Picture In Picture
 extension DownloadViewModel {
     func pictureInPictureSnapshot() -> PictureInPictureSnapshot {
         let activeIDs = queueOrder.filter { activeDownloadTrackIDs.contains($0) }

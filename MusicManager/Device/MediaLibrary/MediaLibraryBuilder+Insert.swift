@@ -3,6 +3,7 @@ import SQLite3
 import CommonCrypto
 import UIKit
 
+// MARK: - Insert
 extension MediaLibraryBuilder {
     @discardableResult
     static func insertSongsWithExisting(

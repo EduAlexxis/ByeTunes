@@ -3,6 +3,7 @@ import SQLite3
 import CommonCrypto
 import UIKit
 
+// MARK: - Ringtones
 extension MediaLibraryBuilder {
     static func addRingtonesToExistingDatabase(
         existingDbData: Data,

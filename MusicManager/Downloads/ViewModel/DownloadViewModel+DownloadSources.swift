@@ -6,6 +6,7 @@ import AVFoundation
 import CommonCrypto
 import SafariServices
 
+// MARK: - Download Sources
 extension DownloadViewModel {
     func downloadWithFallbacks(track: DownloadTrack) async throws -> BackendDownloadOutcome {
         let resolvedSource = await resolvedPrimaryDownloadSource(for: track)

@@ -10,12 +10,15 @@ import SafariServices
 final class DownloadViewModel: ObservableObject {
     static let shared = DownloadViewModel()
 
+    // MARK: - Search Results
     @Published var artistResults: [DownloadArtist] = []
     @Published var songResults: [DownloadTrack] = []
     @Published var albumResults: [DownloadAlbum] = []
     @Published var playlistResults: [DownloadAlbum] = []
     @Published var pendingDirectLinkAction: DownloadDirectLinkAction?
     @Published var isPaused = false
+
+    // MARK: - Queue State
     var foregroundWorkerTasks: [String: Task<Void, Never>] = [:]
     var maxConcurrentDownloads: Int {
         isLosslessDownloadFormat ? 1 : 2
@@ -35,6 +38,8 @@ final class DownloadViewModel: ObservableObject {
     var shouldShowCancelButton: Bool {
         !pendingQueue.isEmpty || !activeDownloadTrackIDs.isEmpty || isPaused
     }
+
+    // MARK: - Search State
     @Published var isSearching = false
     @Published var errorText: String?
     @Published var canLoadMoreSongs = false
@@ -83,6 +88,7 @@ final class DownloadViewModel: ObservableObject {
         UserDefaults.standard.bool(forKey: "backgroundDownloadsEnabled")
     }
 
+    // MARK: - Lifecycle
     init() {
         restorePersistedQueue()
         lifecycleObservers = [
@@ -95,6 +101,7 @@ final class DownloadViewModel: ObservableObject {
         ]
     }
 
+    // MARK: - Progress
     var aggregateDownloadProgress: Double {
         guard totalQueueCount > 0 else { return 0 }
         let activeCredit = downloadProgressByTrackID.values.reduce(0, +)
@@ -125,6 +132,7 @@ final class DownloadViewModel: ObservableObject {
         return "\(min(completedQueueCount, totalQueueCount))/\(totalQueueCount)"
     }
 
+    // MARK: - Track State
     func state(for trackID: String) -> DownloadTrackState {
         trackStates[trackID] ?? .idle
     }

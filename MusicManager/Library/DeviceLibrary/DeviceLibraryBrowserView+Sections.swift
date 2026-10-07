@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 import UIKit
 import ImageIO
 
+// MARK: - Sections
 extension DeviceLibraryBrowserView {
     var topBar: some View {
         HStack {

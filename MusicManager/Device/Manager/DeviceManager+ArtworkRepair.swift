@@ -5,6 +5,7 @@ import UIKit
 import CommonCrypto
 import SQLite3
 
+// MARK: - Artwork Repair
 extension DeviceManager {
     func repairIOS26ArtworkColors(progress: @escaping (String) -> Void, completion: @escaping (Bool, String) -> Void) {
         guard supportsIOS26ArtworkRepair else {

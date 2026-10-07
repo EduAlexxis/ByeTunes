@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+// MARK: - Connection
 extension SettingsView {
     var connectionSection: some View {
         VStack(alignment: .leading, spacing: 12) {

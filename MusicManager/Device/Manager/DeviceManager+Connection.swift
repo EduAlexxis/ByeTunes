@@ -5,6 +5,7 @@ import UIKit
 import CommonCrypto
 import SQLite3
 
+// MARK: - Connection
 extension DeviceManager {
     func resetConnectionHandles() {
         if let oldProvider = provider {

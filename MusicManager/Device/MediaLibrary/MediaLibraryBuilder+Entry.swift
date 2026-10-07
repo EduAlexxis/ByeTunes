@@ -3,7 +3,9 @@ import SQLite3
 import CommonCrypto
 import UIKit
 
+// MARK: - Entry
 extension MediaLibraryBuilder {
+    // MARK: - Version-Aware Database Generation
     static func createDatabase(songs: [SongMetadata], version: DatabaseVersion, playlistName: String? = nil) throws -> (dbURL: URL, artworkInfo: [ArtworkInfo], pids: [Int64]) {
         Logger.shared.log("[MediaLibraryBuilder] ====== createDatabase CALLED for \(version.description) ======")
         let fileManager = FileManager.default

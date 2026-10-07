@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+// MARK: - Help
 extension SettingsView {
     var helpSection: some View {
         VStack(alignment: .leading, spacing: 12) {

@@ -3,6 +3,7 @@ import SQLite3
 import CommonCrypto
 import UIKit
 
+// MARK: - Schema
 extension MediaLibraryBuilder {
     static func createSchema(db: OpaquePointer?, version: DatabaseVersion) throws {
         let albumSchema: String

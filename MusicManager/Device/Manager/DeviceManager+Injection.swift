@@ -5,6 +5,7 @@ import UIKit
 import CommonCrypto
 import SQLite3
 
+// MARK: - Injection
 extension DeviceManager {
     func isLocalAudioReadable(_ url: URL) -> Bool {
         let needsSecurityScope = url.startAccessingSecurityScopedResource()

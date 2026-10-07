@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+// MARK: - Sections
 extension DownloaderSettingsScreen {
     @ViewBuilder
     var metadataSection: some View {

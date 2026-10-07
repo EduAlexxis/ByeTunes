@@ -5,6 +5,7 @@ import UIKit
 import CommonCrypto
 import SQLite3
 
+// MARK: - Playlists
 extension DeviceManager {
     enum PlaylistAction {
         case create(name: String)

@@ -1,7 +1,10 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+// MARK: - Actions
 extension SettingsView {
+
+    // MARK: - Supporters
     func fetchSupporters() async {
         guard !supportersLoaded || supporters.isEmpty else { return }
 

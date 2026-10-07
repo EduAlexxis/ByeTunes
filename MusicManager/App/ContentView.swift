@@ -96,6 +96,7 @@ struct ContentView: View {
     @State private var availableUpdate: AppUpdateInfo?
     @State private var dismissedUpdateVersion: String?
 
+    // MARK: - iOS 26+ Version Check (GlassUI Support)
     private var isIOS26OrLater: Bool {
         let version = ProcessInfo.processInfo.operatingSystemVersion
         return version.majorVersion >= 26

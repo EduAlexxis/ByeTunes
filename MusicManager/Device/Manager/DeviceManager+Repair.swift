@@ -5,6 +5,7 @@ import UIKit
 import CommonCrypto
 import SQLite3
 
+// MARK: - Repair
 extension DeviceManager {
     func runDatabaseRepairDoctor(progress: @escaping (String, Double?) -> Void, completion: @escaping (Bool, String) -> Void) {
         let token = beginRepairOperation()

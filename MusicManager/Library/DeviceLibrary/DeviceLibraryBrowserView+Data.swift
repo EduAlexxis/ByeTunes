@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 import UIKit
 import ImageIO
 
+// MARK: - Data
 extension DeviceLibraryBrowserView {
     func recomputeLibraryGroupings() {
         cachedGroupedSongs = computeGroupedSongs()

@@ -1,5 +1,6 @@
 import SwiftUI
 
+// MARK: - Tutorial Overlay
 struct TutorialOverlayView: View {
 
     @Binding var isComplete: Bool
@@ -67,6 +68,7 @@ struct TutorialOverlayView: View {
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: step)
     }
 
+    // MARK: - Metadata Choice
     @ViewBuilder
     private var metadataScreen: some View {
         ZStack {
@@ -211,6 +213,7 @@ struct TutorialOverlayView: View {
         .buttonStyle(CardPressStyle())
     }
 
+    // MARK: - Hint Sheet
     @ViewBuilder
     private func hintSheet(
         progress: Int,
@@ -315,6 +318,7 @@ struct TutorialOverlayView: View {
         }
     }
 
+    // MARK: - Helpers
     private func proceed() {
         withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
             step = .downloadHint
@@ -327,6 +331,7 @@ struct TutorialOverlayView: View {
     }
 }
 
+// MARK: - Card Press Style
 private struct CardPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label

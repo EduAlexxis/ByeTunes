@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 import UIKit
 import ImageIO
 
+// MARK: - Artwork
 extension DeviceLibraryBrowserView {
     @ViewBuilder
     func artworkView(for song: DeviceManager.ExportableSongInfo) -> some View {

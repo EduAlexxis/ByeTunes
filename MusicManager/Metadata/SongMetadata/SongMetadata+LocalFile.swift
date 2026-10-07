@@ -31,6 +31,7 @@ private struct FLACFallbackMetadata {
     var artworkData: Data?
 }
 
+// MARK: - Local File
 extension SongMetadata {
     private static func defaultAudioFormatForExtension(_ ext: String) -> Int {
         switch ext.lowercased() {

@@ -5,6 +5,7 @@ import UIKit
 import CommonCrypto
 import SQLite3
 
+// MARK: - Media Library Staging
 extension DeviceManager {
     func stageCurrentMediaLibraryForMutation(label: String) -> (tempDir: URL, dbURL: URL, musicDir: String)? {
         let fileManager = FileManager.default

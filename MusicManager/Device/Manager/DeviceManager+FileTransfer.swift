@@ -5,6 +5,7 @@ import UIKit
 import CommonCrypto
 import SQLite3
 
+// MARK: - File Transfer
 extension DeviceManager {
     func downloadFileFromDevice(remotePath: String, completion: @escaping (Data?) -> Void) {
         Logger.shared.log("[DeviceManager] downloadFileFromDevice called for: \(remotePath)")

@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+// MARK: - Progress
 extension MusicView {
     var progressCounterText: String {
         if shouldHideQueueDuringLargeInjection {

@@ -5,6 +5,7 @@ import UIKit
 import CommonCrypto
 import SQLite3
 
+// MARK: - Ringtones
 extension DeviceManager {
     func injectRingtones(ringtones: [SongMetadata], progress: @escaping (String) -> Void, completion: @escaping (Bool) -> Void) {
         Logger.shared.log("[DeviceManager] injectRingtones called with \(ringtones.count) ringtones")

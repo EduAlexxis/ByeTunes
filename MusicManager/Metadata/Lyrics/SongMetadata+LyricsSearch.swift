@@ -48,6 +48,7 @@ struct LyricsSearchResult: Identifiable {
     let remoteID: Int?
 }
 
+// MARK: - Lyrics Search
 extension SongMetadata {
     static func searchLyrics(query: String, service: LyricsSearchService) async -> [LyricsSearchResult] {
         switch service {

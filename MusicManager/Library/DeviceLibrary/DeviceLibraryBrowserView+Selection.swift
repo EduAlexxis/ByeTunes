@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 import UIKit
 import ImageIO
 
+// MARK: - Selection
 extension DeviceLibraryBrowserView {
     var summaryCountText: String {
         switch libraryMode {

@@ -6,6 +6,7 @@ import AVFoundation
 import CommonCrypto
 import SafariServices
 
+// MARK: - Direct Links
 extension DownloadViewModel {
     func handleDirectLinkSearch(_ link: DirectLinkKind) async -> Bool {
         artistResults = []

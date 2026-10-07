@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+// MARK: - About
 extension SettingsView {
     var supportSection: some View {
         VStack(alignment: .leading, spacing: 12) {
