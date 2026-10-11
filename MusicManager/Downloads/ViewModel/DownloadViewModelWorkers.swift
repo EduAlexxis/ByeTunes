@@ -97,6 +97,10 @@ extension DownloadViewModel {
 
     @discardableResult
     func enqueueMany(_ tracks: [DownloadTrack]) -> Int {
+        if ServerStatusStore.shared.blocksDownloads {
+            errorText = ServerStatusStore.shared.blockedDownloadMessage
+            return 0
+        }
         let validTracks = tracks.filter { canEnqueue(trackID: $0.id) }
         guard !validTracks.isEmpty else { return 0 }
 

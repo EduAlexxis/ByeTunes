@@ -6,6 +6,7 @@ final class MusicManagerAppDelegate: NSObject, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         QueuePersistenceStore.removeLegacyKeys()
+        ServerStatusStore.shared.start()
         TempFileJanitor.sweepStaleFiles()
         return true
     }

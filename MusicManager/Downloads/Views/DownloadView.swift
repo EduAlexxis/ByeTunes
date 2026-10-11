@@ -80,6 +80,7 @@ struct DownloadView: View {
     @Binding var songs: [SongMetadata]
     @Binding var status: String
     @StateObject private var vm = DownloadViewModel.shared
+    @ObservedObject private var serverStatus = ServerStatusStore.shared
     @AppStorage("downloadSearchProvider") private var searchProviderRaw = SearchProvider.deezer.rawValue
     @State private var query = ""
     @State private var handledEmittedCount = 0
@@ -167,6 +168,9 @@ struct DownloadView: View {
                 .background(Color(uiColor: .secondarySystemGroupedBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .padding(.horizontal, 20)
+                if serverStatus.isVisible {
+                    ServerStatusBanner(status: serverStatus.resolved, onDismiss: { serverStatus.dismissBanner() })
+                }
                 if let error = vm.errorText {
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: "exclamationmark.triangle.fill")
@@ -338,6 +342,9 @@ struct DownloadView: View {
                 presentArtistSelection(for: artist)
             }
             vm.pendingDirectLinkAction = nil
+        }
+        .onAppear {
+            Task { await serverStatus.refresh() }
         }
         .sheet(isPresented: $showingQueueDetails) {
             DownloadQueueDetailsSheet(vm: vm)
