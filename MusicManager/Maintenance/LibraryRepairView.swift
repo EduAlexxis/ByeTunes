@@ -7,6 +7,11 @@ struct LibraryRepairView: View {
 
     @State private var isFixingArtwork = false
     @State private var isFixingAlphabeticalOrder = false
+    @State private var isCreatingFavorites = false
+    @State private var isFixingFavorites = false
+    @State private var isDeletingFavorites = false
+    @State private var showingDeleteFavoritesAlert = false
+    @State private var showingReplaceFavoritesAlert = false
     @State private var isRebuildingAlbumArtwork = false
     @State private var isRunningRepairDoctor = false
     @State private var artworkFixMessage = "Fixing artwork..."
@@ -155,6 +160,165 @@ struct LibraryRepairView: View {
                         .padding(.horizontal, 16)
                         .opacity((isFixingAlphabeticalOrder || !manager.heartbeatReady) ? 0.55 : 1)
 
+                        Divider().padding(.leading, 56)
+
+                        HStack {
+                            Button {
+                                createFavoritesPlaylist()
+                            } label: {
+                                HStack {
+                                    if isCreatingFavorites {
+                                        ProgressView()
+                                            .frame(width: 28)
+                                    } else {
+                                        Image(systemName: "heart.fill")
+                                            .font(.body)
+                                            .foregroundColor(.primary)
+                                            .frame(width: 28)
+                                    }
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(isCreatingFavorites ? "Creating Favorites Playlist..." : "Create Favorites Playlist")
+                                            .font(.body)
+                                            .foregroundColor(.primary)
+                                        Text("Adds the Favorites playlist to Music.")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                            .multilineTextAlignment(.leading)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(isCreatingFavorites || !manager.heartbeatReady)
+
+                            Spacer()
+
+                            Button {
+                                showInfo(
+                                    "Create Favorites Playlist",
+                                    "Adds the Favorites playlist to your Music library for devices that don't have one, such as when Sync Library is off. Songs you mark as favorites afterward appear in it. Songs favorited before creating it may need to be favorited again."
+                                )
+                            } label: {
+                                infoButton
+                            }
+                            .buttonStyle(.plain)
+
+                            if !isCreatingFavorites {
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundColor(Color(.systemGray3))
+                            }
+                        }
+                        .padding(.vertical, 14)
+                        .padding(.horizontal, 16)
+                        .opacity((isCreatingFavorites || !manager.heartbeatReady) ? 0.55 : 1)
+
+                        Divider().padding(.leading, 56)
+
+                        HStack {
+                            Button {
+                                fixMissingFavorites()
+                            } label: {
+                                HStack {
+                                    if isFixingFavorites {
+                                        ProgressView()
+                                            .frame(width: 28)
+                                    } else {
+                                        Image(systemName: "heart.circle")
+                                            .font(.body)
+                                            .foregroundColor(.primary)
+                                            .frame(width: 28)
+                                    }
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(isFixingFavorites ? "Fixing Missing Favorites..." : "Fix Missing Favorites")
+                                            .font(.body)
+                                            .foregroundColor(.primary)
+                                        Text("Show non-Apple Music songs in Favorites.")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                            .multilineTextAlignment(.leading)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(isFixingFavorites || !manager.heartbeatReady)
+
+                            Spacer()
+
+                            Button {
+                                showInfo(
+                                    "Fix Missing Favorites",
+                                    "Songs that aren't on Apple Music can be favorited but never show up in the Favorites playlist. This finds your favorited songs that are affected and gives them the details Music needs to list them. Run it again after favoriting more of these songs. If Sync Library is on, back up your library first."
+                                )
+                            } label: {
+                                infoButton
+                            }
+                            .buttonStyle(.plain)
+
+                            if !isFixingFavorites {
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundColor(Color(.systemGray3))
+                            }
+                        }
+                        .padding(.vertical, 14)
+                        .padding(.horizontal, 16)
+                        .opacity((isFixingFavorites || !manager.heartbeatReady) ? 0.55 : 1)
+
+                        Divider().padding(.leading, 56)
+
+                        HStack {
+                            Button {
+                                showingDeleteFavoritesAlert = true
+                            } label: {
+                                HStack {
+                                    if isDeletingFavorites {
+                                        ProgressView()
+                                            .frame(width: 28)
+                                    } else {
+                                        Image(systemName: "heart.slash")
+                                            .font(.body)
+                                            .foregroundColor(.primary)
+                                            .frame(width: 28)
+                                    }
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(isDeletingFavorites ? "Deleting Favorites Playlist..." : "Delete Favorites Playlist")
+                                            .font(.body)
+                                            .foregroundColor(.primary)
+                                        Text("Removes the Favorites playlist from Music.")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                            .multilineTextAlignment(.leading)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(isDeletingFavorites || !manager.heartbeatReady)
+
+                            Spacer()
+
+                            Button {
+                                showInfo(
+                                    "Delete Favorites Playlist",
+                                    "Removes the Favorites playlist from your Music library. Your songs and their favorite marks are not deleted, so creating the playlist again brings your favorites back."
+                                )
+                            } label: {
+                                infoButton
+                            }
+                            .buttonStyle(.plain)
+
+                            if !isDeletingFavorites {
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundColor(Color(.systemGray3))
+                            }
+                        }
+                        .padding(.vertical, 14)
+                        .padding(.horizontal, 16)
+                        .opacity((isDeletingFavorites || !manager.heartbeatReady) ? 0.55 : 1)
+
                         if manager.supportsIOS26ArtworkRepair {
                             Divider().padding(.leading, 56)
 
@@ -296,7 +460,7 @@ struct LibraryRepairView: View {
                 .zIndex(100)
             }
 
-            if isFixingArtwork || isRebuildingAlbumArtwork || isRunningRepairDoctor || isFixingAlphabeticalOrder {
+            if isFixingArtwork || isRebuildingAlbumArtwork || isRunningRepairDoctor || isFixingAlphabeticalOrder || isCreatingFavorites || isFixingFavorites || isDeletingFavorites {
                 artworkFixPopup
                     .transition(.opacity.combined(with: .scale(scale: 0.97)))
             }
@@ -304,8 +468,27 @@ struct LibraryRepairView: View {
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isFixingArtwork)
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isRebuildingAlbumArtwork)
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isFixingAlphabeticalOrder)
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isCreatingFavorites)
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isFixingFavorites)
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isDeletingFavorites)
         .navigationTitle("Library Repair")
         .navigationBarTitleDisplayMode(.inline)
+        .alert("Delete Favorites Playlist?", isPresented: $showingDeleteFavoritesAlert) {
+            Button("Delete", role: .destructive) {
+                deleteFavoritesPlaylist()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes the Favorites playlist from Music. Your songs and favorite marks stay, and you can create the playlist again later.")
+        }
+        .alert("Replace Favorites Playlist?", isPresented: $showingReplaceFavoritesAlert) {
+            Button("Replace", role: .destructive) {
+                createFavoritesPlaylist(replaceExisting: true)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("A Favorites playlist already exists. Replacing it removes it and creates a new one that includes songs added with ByeTunes. If Sync Library is on, the original cloud playlist may stop syncing.")
+        }
         .alert(infoAlertTitle, isPresented: $showingInfoAlert) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -324,13 +507,13 @@ struct LibraryRepairView: View {
                         .fill(Color.accentColor.opacity(0.12))
                         .frame(width: 58, height: 58)
 
-                    Image(systemName: isRunningRepairDoctor ? "heart.text.square" : (isFixingAlphabeticalOrder ? "textformat.abc.dottedunderline" : (isExperimentalArtworkRefreshActive ? "wand.and.stars" : "photo.on.rectangle.angled")))
+                    Image(systemName: isDeletingFavorites ? "heart.slash" : isFixingFavorites ? "heart.circle" : isCreatingFavorites ? "heart.fill" : (isRunningRepairDoctor ? "heart.text.square" : (isFixingAlphabeticalOrder ? "textformat.abc.dottedunderline" : (isExperimentalArtworkRefreshActive ? "wand.and.stars" : "photo.on.rectangle.angled"))))
                         .font(.system(size: 25, weight: .semibold))
                         .foregroundColor(.accentColor)
                 }
 
                 VStack(spacing: 6) {
-                    Text(isRunningRepairDoctor ? "Clean & Repair Library" : (isFixingAlphabeticalOrder ? "Fix Alphabetical Order" : (isExperimentalArtworkRefreshActive ? "Refreshing Metadata & Artwork" : "Fixing Artwork")))
+                    Text(isDeletingFavorites ? "Delete Favorites Playlist" : isFixingFavorites ? "Fix Missing Favorites" : isCreatingFavorites ? "Create Favorites Playlist" : (isRunningRepairDoctor ? "Clean & Repair Library" : (isFixingAlphabeticalOrder ? "Fix Alphabetical Order" : (isExperimentalArtworkRefreshActive ? "Refreshing Metadata & Artwork" : "Fixing Artwork"))))
                         .font(.headline)
                         .foregroundColor(.primary)
 
@@ -461,6 +644,72 @@ struct LibraryRepairView: View {
                 self.showToastMessage(
                     title: success ? message : "Alphabetical Fix Failed: \(message)",
                     icon: success ? "textformat.abc.dottedunderline" : "exclamationmark.triangle.fill"
+                )
+            }
+        }
+    }
+
+    private func createFavoritesPlaylist(replaceExisting: Bool = false) {
+        isCreatingFavorites = true
+        updateArtworkFixProgress("Preparing favorites playlist...")
+
+        manager.createFavoritesPlaylist(replaceExisting: replaceExisting) { message in
+            DispatchQueue.main.async {
+                self.updateArtworkFixProgress(message)
+            }
+        } completion: { result in
+            DispatchQueue.main.async {
+                self.isCreatingFavorites = false
+                switch result {
+                case .alreadyExists:
+                    self.showingReplaceFavoritesAlert = true
+                case .created:
+                    self.showToastMessage(title: "Favorites playlist created.", icon: "heart.fill")
+                case .replaced(let refreshed):
+                    self.showToastMessage(title: "Favorites playlist replaced. Refreshed \(refreshed) favorited songs.", icon: "heart.fill")
+                case .failed(let message):
+                    guard !message.lowercased().contains("cancel") else { return }
+                    self.showToastMessage(title: "Favorites Playlist Failed: \(message)", icon: "exclamationmark.triangle.fill")
+                }
+            }
+        }
+    }
+
+    private func fixMissingFavorites() {
+        isFixingFavorites = true
+        updateArtworkFixProgress("Preparing favorites fix...")
+
+        manager.fixMissingFavorites { message in
+            DispatchQueue.main.async {
+                self.updateArtworkFixProgress(message)
+            }
+        } completion: { success, message in
+            DispatchQueue.main.async {
+                self.isFixingFavorites = false
+                guard !message.lowercased().contains("cancel") else { return }
+                self.showToastMessage(
+                    title: success ? message : "Favorites Fix Failed: \(message)",
+                    icon: success ? "heart.circle.fill" : "exclamationmark.triangle.fill"
+                )
+            }
+        }
+    }
+
+    private func deleteFavoritesPlaylist() {
+        isDeletingFavorites = true
+        updateArtworkFixProgress("Preparing to delete favorites playlist...")
+
+        manager.deleteFavoritesPlaylist { message in
+            DispatchQueue.main.async {
+                self.updateArtworkFixProgress(message)
+            }
+        } completion: { success, message in
+            DispatchQueue.main.async {
+                self.isDeletingFavorites = false
+                guard !message.lowercased().contains("cancel") else { return }
+                self.showToastMessage(
+                    title: success ? message : "Delete Failed: \(message)",
+                    icon: success ? "heart.slash.fill" : "exclamationmark.triangle.fill"
                 )
             }
         }
