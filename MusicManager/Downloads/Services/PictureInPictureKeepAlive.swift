@@ -25,6 +25,14 @@ final class PictureInPictureKeepAlive: NSObject {
         UserDefaults.standard.bool(forKey: "backgroundDownloadsEnabled")
     }
 
+    var isSilentAudioEnabled: Bool {
+        UserDefaults.standard.object(forKey: "silentAudioEnabled") as? Bool ?? true
+    }
+
+    var isPictureInPictureEnabled: Bool {
+        UserDefaults.standard.object(forKey: "pictureInPictureEnabled") as? Bool ?? true
+    }
+
     var isPictureInPictureActive: Bool {
         pipController?.isPictureInPictureActive ?? false
     }
@@ -32,14 +40,19 @@ final class PictureInPictureKeepAlive: NSObject {
     func engage(for viewModel: DownloadViewModel) {
         guard isEnabled, !isEngaged else { return }
         guard UIApplication.shared.applicationState == .active else { return }
-        guard AVPictureInPictureController.isPictureInPictureSupported() else {
-            Logger.shared.log("[PiP] Picture in Picture is not supported on this device")
-            return
+        let usesPictureInPicture = isPictureInPictureEnabled
+        if usesPictureInPicture {
+            guard AVPictureInPictureController.isPictureInPictureSupported() else {
+                Logger.shared.log("[PiP] Picture in Picture is not supported on this device")
+                return
+            }
         }
 
         self.viewModel = viewModel
-        renderer.reset()
-        renderer.configure(size: PictureInPictureRenderer.canvasSize(style: PictureInPictureStyle.current(), maxActive: viewModel.maxConcurrentDownloads))
+        if usesPictureInPicture {
+            renderer.reset()
+            renderer.configure(size: PictureInPictureRenderer.canvasSize(style: PictureInPictureStyle.current(), maxActive: viewModel.maxConcurrentDownloads))
+        }
 
         do {
             let session = AVAudioSession.sharedInstance()
@@ -50,23 +63,34 @@ final class PictureInPictureKeepAlive: NSObject {
             return
         }
 
-        startSilentAudio()
-        configureLayer()
-        configureController()
-        startFrameTimer()
+        let usesSilentAudio = usesPictureInPicture || isSilentAudioEnabled
+        let usesLocation = !usesPictureInPicture && LocationKeepAlive.shared.isEnabled
+        if usesSilentAudio {
+            startSilentAudio()
+        }
+        if usesLocation {
+            LocationKeepAlive.shared.start()
+        }
+        if usesPictureInPicture {
+            configureLayer()
+            configureController()
+        }
+        startFrameTimer(rendersFrames: usesPictureInPicture)
         isEngaged = true
 
-        resignObserver = NotificationCenter.default.addObserver(
-            forName: UIApplication.willResignActiveNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.startPictureInPictureIfPossible(reason: "willResignActive")
+        if usesPictureInPicture {
+            resignObserver = NotificationCenter.default.addObserver(
+                forName: UIApplication.willResignActiveNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.startPictureInPictureIfPossible(reason: "willResignActive")
+                }
             }
         }
 
-        Logger.shared.log("[PiP] Keep-alive engaged")
+        Logger.shared.log("[PiP] Keep-alive engaged (silent audio: \(usesSilentAudio), Picture in Picture: \(usesPictureInPicture), location: \(usesLocation))")
     }
 
     func disengage() {
@@ -82,6 +106,7 @@ final class PictureInPictureKeepAlive: NSObject {
         resignObserver = nil
 
         stopSilentAudio()
+        LocationKeepAlive.shared.stop()
         pipController?.stopPictureInPicture()
         pipController = nil
         displayLayer.flushAndRemoveImage()
@@ -200,23 +225,27 @@ final class PictureInPictureKeepAlive: NSObject {
         }
     }
 
-    private func startFrameTimer() {
-        renderFrame()
-        let timer = Timer(timeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in
+    private func startFrameTimer(rendersFrames: Bool) {
+        if rendersFrames {
+            renderFrame()
+        }
+        let timer = Timer(timeInterval: rendersFrames ? 1.0 / 20.0 : 1.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.tick()
+                self?.tick(rendersFrames: rendersFrames)
             }
         }
         RunLoop.main.add(timer, forMode: .common)
         frameTimer = timer
     }
 
-    private func tick() {
+    private func tick(rendersFrames: Bool) {
         guard let viewModel, viewModel.hasPendingOrActiveDownloads, !viewModel.isPaused else {
             disengage()
             return
         }
-        renderFrame()
+        if rendersFrames {
+            renderFrame()
+        }
     }
 
     private func startPictureInPictureIfPossible(reason: String) {

@@ -86,7 +86,7 @@ extension DownloadViewModel {
 
     func appDidEnterBackground() {
         isAppActive = false
-        guard PictureInPictureKeepAlive.shared.isEngaged else { return }
+        guard PictureInPictureKeepAlive.shared.isEngaged, PictureInPictureKeepAlive.shared.isPictureInPictureEnabled else { return }
         Task {
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             if !isAppActive && !PictureInPictureKeepAlive.shared.isPictureInPictureActive {

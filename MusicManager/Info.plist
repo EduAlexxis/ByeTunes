@@ -48,7 +48,10 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
+		<string>location</string>
 	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Used only to keep downloads running while the app is in the background. Your location is never stored or shared.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Used to find your device's RemotePairing tunnel service on the local network when connecting over LocalDevVPN.</string>
 	<key>NSBonjourServices</key>

@@ -13,6 +13,9 @@ struct DownloaderSettingsScreen: View {
     @Binding var keepDownloadedSongs: Bool
     @Binding var tagKeptDownloadedSongs: Bool
     @Binding var backgroundDownloadsEnabled: Bool
+    @AppStorage("silentAudioEnabled") var silentAudioEnabled = true
+    @AppStorage("pictureInPictureEnabled") var pictureInPictureEnabled = true
+    @AppStorage("locationKeepAliveEnabled") var locationKeepAliveEnabled = false
     @Binding var showingDownloadFolderPicker: Bool
     @Binding var yoinkifyFormat: String
 

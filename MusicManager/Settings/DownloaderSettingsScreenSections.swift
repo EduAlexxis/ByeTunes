@@ -352,7 +352,7 @@ extension DownloaderSettingsScreen {
                     Button {
                         showInfo(
                             "Allow Background Downloads",
-                            "While downloads are running and you leave the app, a small Picture in Picture window with the download progress appears, and the app plays silence so iOS keeps it running. The whole queue keeps downloading as long as the window stays open. Closing it lets iOS pause the app again. You can change how the window looks in Customize Picture in Picture."
+                            "While downloads are running and you leave the app, the app uses the options below to stay running so the whole queue keeps downloading: silent audio, a small Picture in Picture window with the download progress, and low-power location. Turn on the ones that work best for you."
                         )
                     } label: {
                         infoButton
@@ -365,6 +365,119 @@ extension DownloaderSettingsScreen {
             .padding(.horizontal, 16)
 
             if backgroundDownloadsEnabled {
+                Divider().padding(.leading, 56)
+
+                Toggle(isOn: $pictureInPictureEnabled) {
+                    HStack {
+                        Image(systemName: "pip")
+                            .font(.body)
+                            .foregroundColor(.primary)
+                            .frame(width: 28)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Picture in Picture")
+                                .font(.body)
+                            Text("Floating progress window with silent audio.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        Spacer()
+
+                        Button {
+                            showInfo(
+                                "Picture in Picture",
+                                "Shows a small floating window with the download progress when you leave the app and plays silent audio so downloads keep running, even with the screen off. This is the most reliable option. Turn it off to choose Silent Audio and Keep Location Active yourself."
+                            )
+                        } label: {
+                            infoButton
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+                .padding(.vertical, 10)
+                .padding(.horizontal, 16)
+
+                Divider().padding(.leading, 56)
+
+                Toggle(isOn: pictureInPictureEnabled ? .constant(true) : $silentAudioEnabled) {
+                    HStack {
+                        Image(systemName: "speaker.wave.1")
+                            .font(.body)
+                            .foregroundColor(.primary)
+                            .frame(width: 28)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Silent Audio")
+                                .font(.body)
+                            Text(pictureInPictureEnabled ? "Included with Picture in Picture." : "Play silence so iOS keeps the app running.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        Spacer()
+
+                        Button {
+                            showInfo(
+                                "Silent Audio",
+                                "Plays an inaudible looping sound while downloads run so iOS keeps the app alive in the background. It mixes with your music and does not show a Now Playing card. It is always on with Picture in Picture, and can be used together with Keep Location Active when Picture in Picture is off."
+                            )
+                        } label: {
+                            infoButton
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+                .padding(.vertical, 10)
+                .padding(.horizontal, 16)
+                .disabled(pictureInPictureEnabled)
+                .opacity(pictureInPictureEnabled ? 0.55 : 1)
+
+                Divider().padding(.leading, 56)
+
+                Toggle(isOn: pictureInPictureEnabled ? .constant(false) : $locationKeepAliveEnabled) {
+                    HStack {
+                        Image(systemName: "location")
+                            .font(.body)
+                            .foregroundColor(.primary)
+                            .frame(width: 28)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Keep Location Active")
+                                .font(.body)
+                            Text(pictureInPictureEnabled ? "Available when Picture in Picture is off." : "Helps downloads keep running in the background.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        Spacer()
+
+                        Button {
+                            showInfo(
+                                "Keep Location Active",
+                                "Uses low-power location updates while downloads run so iOS is less likely to pause the app. Your location is never stored or sent anywhere. iOS shows its location indicator while this is active, and it can use some extra battery. You will be asked to allow location access the first time. Available when Picture in Picture is off."
+                            )
+                        } label: {
+                            infoButton
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+                .padding(.vertical, 10)
+                .padding(.horizontal, 16)
+                .disabled(pictureInPictureEnabled)
+                .opacity(pictureInPictureEnabled ? 0.55 : 1)
+                .onChange(of: locationKeepAliveEnabled) { isOn in
+                    if isOn {
+                        LocationKeepAlive.shared.requestPermissionIfNeeded()
+                    }
+                }
+            }
+
+            if backgroundDownloadsEnabled && pictureInPictureEnabled {
                 Divider().padding(.leading, 56)
 
                 NavigationLink {
