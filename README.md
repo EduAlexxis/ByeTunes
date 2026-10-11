@@ -34,6 +34,15 @@ You can find idevice and compile it from here: [https://github.com/jkcoxson/idev
 
 *If you don't have these files, the project will not compile.*
 
+### Backend Configuration
+
+ByeTunes talks to a backend for downloads and metadata. The app reads the backend address from `MusicManager/Config.plist`, which is not included in this repository.
+
+1.  Copy `Config.example.plist` to `MusicManager/Config.plist`.
+2.  Replace the placeholder value of `ByeTunesApiUrl` with the address of your own backend.
+
+Without this file the app falls back to a local placeholder address and downloads will not work.
+
 ### Build Steps
 
 1.  Install Rust:
@@ -98,6 +107,12 @@ Inside your Xcode project and make sure you add:
 
 -   **Signed Apps**: If you install this via a signing service (Signulous, AltStore, etc.), the app includes a fix (`asCopy: true`) to ensure file importing works correctly without crashing.
 -   **Backup**: Always good to have a backup of your music library before messing with database injection!
+
+## License & Hosted Backend
+
+The source code is licensed under the [MIT License](LICENSE).
+
+The official ByeTunes download/metadata server is a separate hosted service and is **not** covered by that license. You are welcome to fork, modify and share ByeTunes under the MIT License, but modified builds must run their own backend instead of using the official one. Linking to this repository's releases is preferred over re-uploading them. See [BACKEND_TERMS.md](BACKEND_TERMS.md) for details.
 
 ## Support & Bug Reporting
 
