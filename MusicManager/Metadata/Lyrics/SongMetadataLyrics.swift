@@ -67,7 +67,7 @@ extension SongMetadata {
         guard let url = URL(string: urlString) else { return nil }
         
         var request = URLRequest(url: url)
-        request.setValue("ByeTunes/2.5 (https://github.com/EduAlexxis/ByeTunes)", forHTTPHeaderField: "User-Agent")
+        request.setValue("ByeTunes/2.6 (https://github.com/EduAlexxis/ByeTunes)", forHTTPHeaderField: "User-Agent")
         
         do {
             let (data, response) = try await SongMetadataNetworking.data(for: request)
