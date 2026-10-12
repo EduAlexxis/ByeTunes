@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 extension SettingsView {
     var repairSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("LIBRARY REPAIR & MAINTENANCE")
+            Text("LIBRARY TOOLS")
                 .font(.caption)
                 .fontWeight(.medium)
                 .foregroundColor(.secondary)
@@ -22,10 +22,10 @@ extension SettingsView {
                             .frame(width: 28)
 
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Repair & Maintenance")
+                            Text("Library Tools")
                                 .font(.body)
                                 .foregroundColor(.primary)
-                            Text("Clean, repair, and fix artwork in your library")
+                            Text("Repair your library and turn on features like Favorites")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }

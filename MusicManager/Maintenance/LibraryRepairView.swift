@@ -48,7 +48,7 @@ struct LibraryRepairView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("LIBRARY REPAIR & MAINTENANCE")
+                    Text("LIBRARY TOOLS")
                         .font(.caption)
                         .fontWeight(.medium)
                         .foregroundColor(.secondary)
@@ -471,7 +471,7 @@ struct LibraryRepairView: View {
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isCreatingFavorites)
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isFixingFavorites)
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isDeletingFavorites)
-        .navigationTitle("Library Repair")
+        .navigationTitle("Library Tools")
         .navigationBarTitleDisplayMode(.inline)
         .alert("Delete Favorites Playlist?", isPresented: $showingDeleteFavoritesAlert) {
             Button("Delete", role: .destructive) {
