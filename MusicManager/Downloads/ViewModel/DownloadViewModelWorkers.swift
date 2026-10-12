@@ -137,13 +137,13 @@ extension DownloadViewModel {
         guard backgroundDownloadsEnabled else { return }
         guard backgroundTaskID == .invalid else { return }
         let taskState = DownloadBackgroundTaskState()
-        taskState.id = UIApplication.shared.beginBackgroundTask(withName: "DownloadQueue") {
+        taskState.id = UIApplication.shared.beginBackgroundTask(withName: "DownloadQueue") { [weak self] in
             guard taskState.id != .invalid else { return }
             Logger.shared.log("[Download] Background task expired while queue was active")
             let expiredID = taskState.id
             UIApplication.shared.endBackgroundTask(expiredID)
             taskState.id = .invalid
-            Task { @MainActor [weak self] in
+            Task { @MainActor in
                 self?.clearBackgroundTaskID(expiredID)
             }
         }

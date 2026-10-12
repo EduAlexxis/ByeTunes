@@ -93,10 +93,14 @@ final class DownloadViewModel: ObservableObject {
         restorePersistedQueue()
         lifecycleObservers = [
             NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
-                self?.appDidBecomeActive()
+                MainActor.assumeIsolated {
+                    self?.appDidBecomeActive()
+                }
             },
             NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
-                self?.appDidEnterBackground()
+                MainActor.assumeIsolated {
+                    self?.appDidEnterBackground()
+                }
             }
         ]
     }
@@ -130,6 +134,17 @@ final class DownloadViewModel: ObservableObject {
             return "\(min(completedQueueCount + activeDownloadTrackIDs.count, totalQueueCount))/\(totalQueueCount)"
         }
         return "\(min(completedQueueCount, totalQueueCount))/\(totalQueueCount)"
+    }
+
+    var queueIndicatorSymbol: String {
+        if isPaused {
+            return "pause.fill"
+        }
+        guard totalQueueCount > 0 else { return "arrow.down" }
+        if activeDownloadTrackIDs.isEmpty && pendingQueue.isEmpty && completedQueueCount >= totalQueueCount {
+            return "checkmark"
+        }
+        return "arrow.down"
     }
 
     // MARK: - Track State

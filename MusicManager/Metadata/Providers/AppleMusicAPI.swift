@@ -638,7 +638,7 @@ actor AppleMusicAPI {
             guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]),
                   let match = regex.firstMatch(in: html, range: NSRange(html.startIndex..<html.endIndex, in: html)),
                   let range = Range(match.range(at: 1), in: html) else {
-                await Logger.shared.log("[AppleMusicAPI] Public search page JSON was not found for query: \(query)")
+                Logger.shared.log("[AppleMusicAPI] Public search page JSON was not found for query: \(query)")
                 return []
             }
 
@@ -651,7 +651,7 @@ actor AppleMusicAPI {
             }
             return matchedSection?.items ?? []
         } catch {
-            await Logger.shared.log("[AppleMusicAPI] Public search page fallback failed for \(title): \(error)")
+            Logger.shared.log("[AppleMusicAPI] Public search page fallback failed for \(title): \(error)")
             return []
         }
     }
@@ -676,7 +676,7 @@ actor AppleMusicAPI {
             let decoded = try JSONDecoder().decode(PublicAlbumPageEnvelope.self, from: jsonData)
             return decoded.data.first
         } catch {
-            await Logger.shared.log("[AppleMusicAPI] Public catalog page fetch failed for \(urlString): \(error)")
+            Logger.shared.log("[AppleMusicAPI] Public catalog page fetch failed for \(urlString): \(error)")
             return nil
         }
     }
@@ -800,7 +800,7 @@ actor AppleMusicAPI {
             )
             return song
         } catch {
-            await Logger.shared.log("[AppleMusicAPI] Public song page fallback failed for \(expectedTrackID): \(error)")
+            Logger.shared.log("[AppleMusicAPI] Public song page fallback failed for \(expectedTrackID): \(error)")
             return nil
         }
     }

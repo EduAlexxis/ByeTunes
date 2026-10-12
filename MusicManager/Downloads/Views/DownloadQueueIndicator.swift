@@ -9,6 +9,7 @@ import SafariServices
 struct DownloadQueueIndicator: View {
     let progress: Double
     let label: String
+    let symbol: String
 
     var body: some View {
         ZStack {
@@ -23,10 +24,9 @@ struct DownloadQueueIndicator: View {
                 )
                 .rotationEffect(.degrees(-90))
 
-            Text(label)
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.primary)
-                .minimumScaleFactor(0.7)
+            Image(systemName: symbol)
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(symbol == "checkmark" ? Color.green : Color.primary)
         }
         .frame(width: 44, height: 44)
         .accessibilityLabel("Download queue progress \(label)")

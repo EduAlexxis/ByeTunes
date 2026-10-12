@@ -1,6 +1,6 @@
 import Foundation
 
-struct Config {
+nonisolated struct Config {
     static let byeTunesApiUrl: String = {
         if let path = Bundle.main.path(forResource: "Config", ofType: "plist"),
            let dict = NSDictionary(contentsOfFile: path),

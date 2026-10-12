@@ -71,7 +71,8 @@ struct DownloadQueueDetailsSheet: View {
                     HStack(spacing: 12) {
                         DownloadQueueIndicator(
                             progress: snapshot.aggregateProgress,
-                            label: snapshot.queueCounterText
+                            label: snapshot.queueCounterText,
+                            symbol: vm.queueIndicatorSymbol
                         )
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Download Queue")

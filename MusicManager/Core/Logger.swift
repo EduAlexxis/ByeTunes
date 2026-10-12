@@ -2,10 +2,12 @@ import Foundation
 import SwiftUI
 import Combine
 
-class Logger: ObservableObject {
+nonisolated final class Logger: ObservableObject, @unchecked Sendable {
     static let shared = Logger()
 
-    @Published var logs: String = ""
+    var logs: String = "" {
+        willSet { objectWillChange.send() }
+    }
     private var dateFormatter: DateFormatter
 
 
@@ -40,6 +42,7 @@ class Logger: ObservableObject {
         "[Download] Mapped to Spotify for last-resort retry",
         "[Download] Last-resort Spotify mapping failed",
         "[DeviceManager] downloadFileFromDevice called for: /iTunes_Control/iTunes/Artwork/Originals/",
+        "[DeviceManager] downloadFileFromDevice called for: /iTunes_Control/iTunes/MediaLibrary.sqlitedb",
         " bytes from /iTunes_Control/iTunes/Artwork/Originals/",
         "[SongMetadata] Extracted artwork:",
         "[SongMetadata] Deep Scan extracted artwork:",

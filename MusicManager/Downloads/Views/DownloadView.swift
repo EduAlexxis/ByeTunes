@@ -120,7 +120,8 @@ struct DownloadView: View {
                     } label: {
                         DownloadQueueIndicator(
                             progress: vm.aggregateDownloadProgress,
-                            label: vm.queueCounterText
+                            label: vm.queueCounterText,
+                            symbol: vm.queueIndicatorSymbol
                         )
                     }
                     .buttonStyle(.plain)
