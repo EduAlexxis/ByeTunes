@@ -907,7 +907,7 @@ extension DeviceManager {
         SELECT DISTINCT
             i.item_pid,
             i.album_pid,
-            IFNULL(s.store_item_id, 0),
+            CASE WHEN IFNULL(s.store_item_id, 0) >= 9000000000 THEN 0 ELSE IFNULL(s.store_item_id, 0) END,
             IFNULL(ie.title, ''),
             IFNULL(ia.item_artist, ''),
             IFNULL(al.album, ''),

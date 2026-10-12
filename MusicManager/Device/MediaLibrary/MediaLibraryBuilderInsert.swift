@@ -251,18 +251,23 @@ extension MediaLibraryBuilder {
                 .sqlEscaped
             let hasAppleCatalogMatch = shouldWriteAppleCatalogStoreFields(for: song)
             let hasAppleSubscriptionAudioTrait = song.isDolbyAtmosCapable || song.hasSpatialAudioTrait || song.hasAppleLosslessTrait
-            let subscriptionStoreItemId = hasAppleSubscriptionAudioTrait && hasAppleCatalogMatch
+            let realSubscriptionStoreItemId = hasAppleSubscriptionAudioTrait && hasAppleCatalogMatch
                 ? song.storeId
                 : 0
             let masteredForItunes = (song.isMasteredForItunes || song.isAppleDigitalMaster) ? 1 : 0
             let matchRedownloadParamsEscaped = hasAppleCatalogMatch
                 ? "sagaId=\\(song.storeId)".sqlEscaped
                 : ""
-            let storeSagaId = hasAppleCatalogMatch ? song.storeId : 0
-            let cloudStatus = hasAppleCatalogMatch ? 8 : 0
+            let placeholderId = 9_000_000_000 + abs(itemPid % 900_000_000)
+            let storeItemId = hasAppleCatalogMatch ? song.storeId : placeholderId
+            let storeSagaId = storeItemId
+            let storefrontId = song.storefrontId > 0 ? song.storefrontId : 143441
+            let storePlaylistId = song.playlistId > 0 ? song.playlistId : placeholderId
+            let subscriptionStoreItemId = hasAppleCatalogMatch ? realSubscriptionStoreItemId : placeholderId
+            let cloudStatus = 8
             let cloudAssetAvailable = hasAppleCatalogMatch ? 1 : 0
-            let cloudInMyLibrary = hasAppleCatalogMatch ? 1 : 0
-            let playbackEndpointType = subscriptionStoreItemId > 0 ? 3 : 0
+            let cloudInMyLibrary = 1
+            let playbackEndpointType = realSubscriptionStoreItemId > 0 ? 3 : 0
             let cloudPlaybackEndpointType = hasAppleCatalogMatch ? 3 : 0
             let isSubscription = (version.isSubscription || hasAppleCatalogMatch) ? 1 : 0
             try executeSQL(db, """
@@ -278,8 +283,8 @@ extension MediaLibraryBuilder {
                 ) VALUES (
                     \(itemPid), \(syncId), 1, \(isSubscription),
                     \(storeSagaId), '\(matchRedownloadParamsEscaped)', \(cloudStatus),
-                    '\(storeXidEscaped)', \(song.storeId), \(song.storefrontId),
-                    \(song.composerId), \(song.genreStoreId), \(song.playlistId),
+                    '\(storeXidEscaped)', \(storeItemId), \(storefrontId),
+                    \(song.composerId), \(song.genreStoreId), \(storePlaylistId),
                     \(song.releaseDate), \(subscriptionStoreItemId),
                     \(masteredForItunes), '\(storeFlavorEscaped)',
                     \(cloudAssetAvailable), \(cloudInMyLibrary),
