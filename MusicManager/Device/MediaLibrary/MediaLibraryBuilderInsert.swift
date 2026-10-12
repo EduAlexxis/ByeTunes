@@ -256,7 +256,7 @@ extension MediaLibraryBuilder {
                 : 0
             let masteredForItunes = (song.isMasteredForItunes || song.isAppleDigitalMaster) ? 1 : 0
             let matchRedownloadParamsEscaped = hasAppleCatalogMatch
-                ? "sagaId=\\(song.storeId)".sqlEscaped
+                ? "sagaId=\(song.storeId)".sqlEscaped
                 : ""
             let placeholderId = 9_000_000_000 + abs(itemPid % 900_000_000)
             let storeItemId = hasAppleCatalogMatch ? song.storeId : placeholderId
