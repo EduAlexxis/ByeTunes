@@ -59,7 +59,11 @@ extension DeviceManager {
                 if let openErr = err {
                     let msg = openErr.pointee.message != nil ? String(cString: openErr.pointee.message!) : "No message"
                     let isConnLoss = self.isConnectionLossError(openErr)
-                    Logger.shared.log("[DeviceManager] afc_file_open failed. Code: \(openErr.pointee.code), Msg: \(msg), ConnectionLoss: \(isConnLoss)")
+                    let expectedMissing = msg.contains("ObjectNotFound")
+                        && (remotePath.hasPrefix("/iTunes_Control/iTunes/Artwork/") || remotePath.hasSuffix("-wal") || remotePath.hasSuffix("-shm"))
+                    if !expectedMissing || isConnLoss {
+                        Logger.shared.log("[DeviceManager] afc_file_open failed for \(remotePath). Code: \(openErr.pointee.code), Msg: \(msg), ConnectionLoss: \(isConnLoss)")
+                    }
                     idevice_error_free(openErr)
 
                     if isConnLoss && attempt < 2 {

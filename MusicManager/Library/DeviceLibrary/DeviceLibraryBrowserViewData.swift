@@ -28,12 +28,14 @@ extension DeviceLibraryBrowserView {
 
                 manager.fetchExportablePlaylists { pList in
                     DispatchQueue.main.async {
-                        Logger.shared.log("[Playlist Debug] Fetched playlists: \(pList)")
+                        Logger.shared.log("[Playlists] Loaded \(pList.count) playlists, \(manager.pinnedPlaylistPids.count) pinned")
                         self.playlists = pList.map { p in
                             let pSongs = p.songPids.compactMap { pid in
                                 result.first(where: { $0.itemPid == pid })
                             }
-                            Logger.shared.log("[Playlist Debug] Playlist '\(p.name)' matched \(pSongs.count) out of \(p.songPids.count) PIDs.")
+                            if pSongs.count != p.songPids.count {
+                                Logger.shared.log("[Playlists] '\(p.name)' matched \(pSongs.count) of \(p.songPids.count) songs")
+                            }
                             return PlaylistEntry(name: p.name, pid: p.pid, songs: pSongs)
                         }
                         isLoading = false

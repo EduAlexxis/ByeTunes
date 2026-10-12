@@ -109,6 +109,19 @@ extension DeviceLibraryBrowserView {
                         }
                         .buttonStyle(.plain)
                         .contextMenu {
+                            if manager.pinnedPlaylistPids.contains(playlist.pid) {
+                                Button {
+                                    applyPlaylistActions([.unpin(containerPid: playlist.pid)])
+                                } label: {
+                                    Label("Unpin from Music", systemImage: "pin.slash")
+                                }
+                            } else {
+                                Button {
+                                    applyPlaylistActions([.pin(containerPid: playlist.pid)])
+                                } label: {
+                                    Label("Pin to Music", systemImage: "pin")
+                                }
+                            }
                             if SmartPlaylistStore.record(forPid: playlist.pid) != nil {
                                 Button {
                                     refreshSmartPlaylist(playlist)
@@ -212,6 +225,10 @@ extension DeviceLibraryBrowserView {
                 if let idx = playlists.firstIndex(where: { $0.pid == containerPid }) {
                     playlists[idx].coverImage = UIImage(data: imageData)
                 }
+            case .pin(let containerPid):
+                manager.pinnedPlaylistPids.insert(containerPid)
+            case .unpin(let containerPid):
+                manager.pinnedPlaylistPids.remove(containerPid)
             }
         }
         
@@ -225,6 +242,7 @@ extension DeviceLibraryBrowserView {
                     }
                 } else {
                     statusMessage = "Sync failed: \(error)"
+                    refreshSongs()
                 }
             }
         }
@@ -282,6 +300,8 @@ extension DeviceLibraryBrowserView {
                         )
                     }
                     .buttonStyle(.plain)
+
+                    pinPlaylistButton(for: current)
                 }
 
                 LazyVStack(spacing: 0) {
@@ -324,6 +344,19 @@ extension DeviceLibraryBrowserView {
                 }
                 renamePlaylistPid = nil
             }
+        }
+    }
+
+    func pinPlaylistButton(for playlist: PlaylistEntry) -> some View {
+        PlaylistPinButton(
+            manager: manager,
+            playlistPid: playlist.pid,
+            isSyncing: $isSyncingPlaylists,
+            textColor: strongTextColor,
+            fillColor: controlFillColor,
+            strokeColor: hairlineColor
+        ) { isPinned in
+            applyPlaylistActions([isPinned ? .unpin(containerPid: playlist.pid) : .pin(containerPid: playlist.pid)])
         }
     }
 

@@ -243,7 +243,7 @@ extension DeviceManager {
         }
         semShm.waitForTransfer()
 
-        let playlists = withStagedMediaLibrary(dbData: dbData, walData: walData, shmData: shmData, label: "playlist_fetch") { stagedDbURL -> [(name: String, pid: Int64, songPids: [Int64], coverRelativePath: String?)]? in
+        let fetched = withStagedMediaLibrary(dbData: dbData, walData: walData, shmData: shmData, label: "playlist_fetch") { stagedDbURL -> (playlists: [(name: String, pid: Int64, songPids: [Int64], coverRelativePath: String?)], pinned: Set<Int64>)? in
             var db: OpaquePointer?
             guard sqlite3_open(stagedDbURL.path, &db) == SQLITE_OK else {
                 if db != nil { sqlite3_close(db) }
@@ -294,10 +294,14 @@ extension DeviceManager {
                 }
             }
             sqlite3_finalize(stmt)
-            return playlists
-        } ?? []
+            return (playlists, MediaLibraryBuilder.pinnedPlaylistPids(db: db))
+        }
 
-        completion(playlists)
+        let pinnedPids = fetched?.pinned ?? []
+        DispatchQueue.main.async {
+            self.pinnedPlaylistPids = pinnedPids
+        }
+        completion(fetched?.playlists ?? [])
     }
 
     static func isWritableExportFolder(_ folder: URL) -> Bool {

@@ -16,6 +16,8 @@ extension DeviceManager {
         case reorder(containerPid: Int64, orderedItemPids: [Int64])
         case addSongs(containerPid: Int64, itemPids: [Int64])
         case setCoverArtwork(containerPid: Int64, imageData: Data)
+        case pin(containerPid: Int64)
+        case unpin(containerPid: Int64)
     }
 
     static func sha256Hex(_ data: Data) -> String {
@@ -37,6 +39,41 @@ extension DeviceManager {
     }
 
     func applyPlaylistEdits(actions: [PlaylistAction], completion: @escaping (Bool, String) -> Void) {
+        let changesPins = actions.contains { action in
+            switch action {
+            case .pin, .unpin:
+                return true
+            default:
+                return false
+            }
+        }
+        guard changesPins else {
+            performPlaylistEdits(actions: actions, completion: completion)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            self.performPlaylistEdits(actions: actions, completion: completion)
+        }
+    }
+
+    private func performPlaylistEdits(actions: [PlaylistAction], completion: @escaping (Bool, String) -> Void) {
+        let changesPins = actions.contains { action in
+            switch action {
+            case .pin, .unpin:
+                return true
+            default:
+                return false
+            }
+        }
+        if changesPins {
+            guard ensureActiveTransport(reason: "changing pins") else {
+                completion(false, "Device connection unavailable.")
+                return
+            }
+            let killed = terminateMusicAppIfRunning()
+            Logger.shared.log("[SyncLifecycle] Music pre-kill for pin change \(killed ? "completed" : "skipped/failed")")
+        }
+
         guard let staged = stageCurrentMediaLibraryForMutation(label: "playlist_edit") else {
             completion(false, "Failed to pull database from device.")
             return
@@ -71,6 +108,10 @@ extension DeviceManager {
                         let relativePath = Self.artworkRelativePath(fromToken: artworkToken)
                         try MediaLibraryBuilder.setPlaylistCoverArtwork(db: db, containerPid: containerPid, artworkToken: artworkToken, relativePath: relativePath)
                         pendingCoverUploads.append((remotePath: "/iTunes_Control/iTunes/Artwork/Originals/\(relativePath)", imageData: imageData))
+                    case .pin(let pid):
+                        try MediaLibraryBuilder.pinPlaylist(db: db, containerPid: pid)
+                    case .unpin(let pid):
+                        try MediaLibraryBuilder.unpinPlaylist(db: db, containerPid: pid)
                     }
                 }
                 sqlite3_close(db)

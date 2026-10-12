@@ -146,6 +146,7 @@ class DeviceManager: ObservableObject {
 
     // MARK: - Connection State
     @Published var heartbeatReady: Bool = false
+    @Published var pinnedPlaylistPids: Set<Int64> = []
     @Published var connectionStatus: String = "Disconnected"
     @Published var hasValidExpectedPairingFile: Bool = false
     var provider: IdeviceProviderHandle?
@@ -157,19 +158,26 @@ class DeviceManager: ObservableObject {
     var pendingReconnectCompletions: [(Bool) -> Void] = []
     let reconnectCoordinationLock = NSLock()
     nonisolated(unsafe) private var currentRepairOperationToken: UUID?
+    nonisolated private let repairTokenLock = NSLock()
 
-    func beginRepairOperation() -> UUID {
+    nonisolated func beginRepairOperation() -> UUID {
         let token = UUID()
+        repairTokenLock.lock()
         currentRepairOperationToken = token
+        repairTokenLock.unlock()
         return token
     }
 
-    func isRepairOperationCancelled(_ token: UUID) -> Bool {
-        currentRepairOperationToken != token
+    nonisolated func isRepairOperationCancelled(_ token: UUID) -> Bool {
+        repairTokenLock.lock()
+        defer { repairTokenLock.unlock() }
+        return currentRepairOperationToken != token
     }
 
-    func cancelCurrentRepairOperation() {
+    nonisolated func cancelCurrentRepairOperation() {
+        repairTokenLock.lock()
         currentRepairOperationToken = nil
+        repairTokenLock.unlock()
     }
     var autoReconnectTimer: DispatchSourceTimer?
     var lastHeartbeatAttemptStartedAt: Date = .distantPast
@@ -400,6 +408,7 @@ class DeviceManager: ObservableObject {
             guard needsReconnect else { return }
 
             self.logOnce("[DeviceManager] Auto-reconnect triggering forced heartbeat refresh", key: "auto_reconnect")
+            Logger.shared.log("[DeviceManager] Auto-reconnect reason: ready=\(self.heartbeatReady), transport=\(self.hasActiveTransport), status=\(self.connectionStatus)")
             self.startHeartbeat(forceReconnect: true)
         }
         timer.resume()
