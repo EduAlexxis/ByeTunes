@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct SongRowView: View {
+    @AppStorage("metadataSource") private var metadataSource = "apple"
+
     let song: SongMetadata
     var showEditButton: Bool = false
     var onEdit: () -> Void = {}
@@ -52,6 +54,19 @@ struct SongRowView: View {
                         Image(systemName: "applelogo")
                             .font(.system(size: 10))
                             .foregroundColor(Color.accentColor)
+                    } else if showEditButton && metadataSource == "apple" {
+                        Button {
+                            onEdit()
+                        } label: {
+                            Text("NO MATCH")
+                                .font(.system(size: 8, weight: .black))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 2)
+                                .background(Color.orange.opacity(0.18))
+                                .foregroundColor(.orange)
+                                .clipShape(RoundedRectangle(cornerRadius: 3))
+                        }
+                        .buttonStyle(.plain)
                     }
 
                     Text(song.audioFormatLabel)

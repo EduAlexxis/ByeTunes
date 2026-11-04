@@ -94,6 +94,14 @@ class DeviceManager: ObservableObject {
         let explicitRating: Int
         let fileExtension: String
         let artworkRelativePath: String?
+        var audioFormat: Int64 = 0
+        var sampleRate: Int = 0
+
+        var isLossless: Bool {
+            ["flac", "alac", "wav", "aif", "aiff"].contains(fileExtension.lowercased()) || audioFormat == 1_634_492_771
+        }
+
+        var isHiRes: Bool { isLossless && sampleRate >= 88_200 }
 
         var suggestedFilename: String {
             let ext = fileExtension.isEmpty ? "mp3" : fileExtension
@@ -151,6 +159,7 @@ class DeviceManager: ObservableObject {
     @Published var pinnedArtistNames: Set<String> = []
     @Published var playlistFolders: [PlaylistFolderInfo] = []
     @Published var playlistParents: [Int64: Int64] = [:]
+    @Published var playlistDescriptions: [Int64: String] = [:]
     @Published var nativeSmartPlaylists: [NativeSmartPlaylist] = []
     @Published var connectionStatus: String = "Disconnected"
     @Published var hasValidExpectedPairingFile: Bool = false

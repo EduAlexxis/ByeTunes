@@ -48,10 +48,13 @@ extension DeviceLibraryBrowserView {
                             .clipShape(Capsule())
                     }
                 }
-                Text(song.artist)
-                    .font(.system(size: 13))
-                    .foregroundStyle(mutedTextColor)
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(song.artist)
+                        .font(.system(size: 13))
+                        .foregroundStyle(mutedTextColor)
+                        .lineLimit(1)
+                    songQualityBadges(song)
+                }
                 Text(song.album)
                     .font(.system(size: 13))
                     .foregroundStyle(mutedTextColor.opacity(0.9))
@@ -93,6 +96,29 @@ extension DeviceLibraryBrowserView {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    func songQualityBadges(_ song: DeviceManager.ExportableSongInfo) -> some View {
+        if song.isHiRes {
+            qualityBadge("HI-RES")
+        } else if song.isLossless {
+            qualityBadge("LOSSLESS")
+        }
+        if song.explicitRating == 1 {
+            qualityBadge("E")
+        }
+    }
+
+    func qualityBadge(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(mutedTextColor)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(mutedTextColor.opacity(0.14))
+            .clipShape(Capsule())
+            .fixedSize()
     }
 
     func artistRow(_ artist: ArtistEntry) -> some View {

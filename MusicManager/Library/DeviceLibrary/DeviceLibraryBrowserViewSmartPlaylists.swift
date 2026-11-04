@@ -29,6 +29,11 @@ extension DeviceLibraryBrowserView {
                         Label("Save to ByeTunes", systemImage: "square.and.arrow.down")
                     }
                 }
+                Button {
+                    exportSmartPlaylists([smart], fileName: smart.name)
+                } label: {
+                    Label("Export…", systemImage: "square.and.arrow.up")
+                }
                 Button(role: .destructive) {
                     manager.nativeSmartPlaylists.removeAll { $0.pid == smart.pid }
                     applyPlaylistActions([.delete(containerPid: smart.pid)])
@@ -48,6 +53,11 @@ extension DeviceLibraryBrowserView {
                     exportSavedSmartPlaylist(smart)
                 } label: {
                     Label("Add to Device", systemImage: "iphone.and.arrow.forward")
+                }
+                Button {
+                    exportSmartPlaylists([smart], fileName: smart.name)
+                } label: {
+                    Label("Export…", systemImage: "square.and.arrow.up")
                 }
                 Button(role: .destructive) {
                     SmartPlaylistStore.remove(forPid: smart.pid)
@@ -207,6 +217,84 @@ extension DeviceLibraryBrowserView {
         .padding(.vertical, 7)
         .contentShape(Rectangle())
         .onAppear { loadArtworkIfNeeded(for: song) }
+    }
+
+    var smartPlaylistFilesButton: some View {
+        Menu {
+            Button {
+                smartImportFromDatabase = false
+                showingSmartImporter = true
+            } label: {
+                Label("Import from File…", systemImage: "doc")
+            }
+            Button {
+                smartImportFromDatabase = true
+                showingSmartImporter = true
+            } label: {
+                Label("Import from a Library Database…", systemImage: "externaldrive")
+            }
+            Button {
+                exportSmartPlaylists(allKnownSmartPlaylists, fileName: "Smart Playlists")
+            } label: {
+                Label("Export All Smart Playlists…", systemImage: "square.and.arrow.up")
+            }
+            .disabled(allKnownSmartPlaylists.isEmpty)
+        } label: {
+            HStack {
+                Image(systemName: "square.and.arrow.down.on.square")
+                    .font(.title2)
+                    .foregroundStyle(Color.accentColor)
+                Text("Smart Playlist Files")
+                    .font(.headline)
+                    .foregroundStyle(Color.accentColor)
+                Spacer()
+            }
+            .padding(.vertical, 14)
+        }
+    }
+
+    private var allKnownSmartPlaylists: [NativeSmartPlaylist] {
+        manager.nativeSmartPlaylists + savedOnlySmartPlaylists
+    }
+
+    func exportSmartPlaylists(_ playlists: [NativeSmartPlaylist], fileName: String) {
+        guard let url = SmartPlaylistFile.writeTemporaryFile(playlists, fileName: fileName) else {
+            statusMessage = "Could not create the export file."
+            return
+        }
+        ShareSheetHelper.share(items: [url])
+    }
+
+    func handleSmartPlaylistImport(_ result: Result<[URL], Error>) {
+        guard case .success(let urls) = result, let url = urls.first else { return }
+        let didAccess = url.startAccessingSecurityScopedResource()
+        defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+
+        let found: [NativeSmartPlaylist]
+        if smartImportFromDatabase {
+            found = SmartPlaylistFile.readDatabase(at: url)
+        } else if let data = try? Data(contentsOf: url) {
+            found = SmartPlaylistFile.decode(data)
+        } else {
+            found = []
+        }
+
+        guard !found.isEmpty else {
+            statusMessage = smartImportFromDatabase ? "No smart playlists found in that database." : "No smart playlists found in that file."
+            return
+        }
+
+        let existing = SmartPlaylistStore.loadAll()
+        var added = 0
+        for playlist in found {
+            let isDuplicate = existing.contains { $0.name == playlist.name && $0.criteria == playlist.criteria }
+                || manager.nativeSmartPlaylists.contains { $0.name == playlist.name && $0.criteria == playlist.criteria }
+            if isDuplicate { continue }
+            SmartPlaylistStore.save(SmartPlaylistRecord(name: playlist.name, containerPid: playlist.pid, rule: nil, criteria: playlist.criteria, limit: playlist.limit))
+            added += 1
+        }
+        refreshSmartPlaylistList += 1
+        statusMessage = added == 0 ? "Those smart playlists are already here." : "Imported \(added) smart playlist\(added == 1 ? "" : "s"). Open one and tap Add to Device."
     }
 
     func importNativeSmartPlaylist(_ smart: NativeSmartPlaylist) {

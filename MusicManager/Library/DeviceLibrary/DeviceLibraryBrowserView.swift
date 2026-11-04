@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 import UniformTypeIdentifiers
 import UIKit
 import ImageIO
@@ -67,6 +68,14 @@ struct DeviceLibraryBrowserView: View {
     @State var showingRenameFolderPrompt = false
     @State var renameFolderPid: Int64? = nil
     @State var renameFolderText = ""
+    @State var showingDescriptionEditor = false
+    @State var showingCoverPhotoPicker = false
+    @State var coverPhotoItem: PhotosPickerItem? = nil
+    @State var coverPhotoPid: Int64? = nil
+    @State var showingSmartImporter = false
+    @State var smartImportFromDatabase = false
+    @State var descriptionEditorPid: Int64? = nil
+    @State var descriptionDraft = ""
     @State var isSyncingPlaylists = false
     @State var showingNewPlaylistPrompt = false
     @State var showingSmartPlaylistBuilder = false

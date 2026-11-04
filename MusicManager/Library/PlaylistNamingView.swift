@@ -76,6 +76,19 @@ struct PlaylistNamingView: View {
                     .buttonStyle(.plain)
                     .padding(.top, 40)
 
+                    Button {
+                        coverImageData = PlaylistCoverGenerator.randomCover()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "wand.and.stars")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text(coverImageData == nil ? "Generate Cover" : "Try Another")
+                                .font(.system(size: 15, weight: .semibold))
+                        }
+                        .foregroundStyle(Color.accentColor)
+                    }
+                    .buttonStyle(.plain)
+
                     VStack(spacing: 8) {
                         TextField("Playlist Title", text: $name)
                             .focused($isFocused)
@@ -142,7 +155,7 @@ struct PlaylistNamingView: View {
         }
     }
 
-    private static func squareCroppedJPEGData(from data: Data, maxDimension: CGFloat = 1024) -> Data? {
+    static func squareCroppedJPEGData(from data: Data, maxDimension: CGFloat = 1024) -> Data? {
         guard let original = UIImage(data: data) else { return nil }
 
         let normalized: UIImage

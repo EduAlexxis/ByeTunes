@@ -67,6 +67,32 @@ extension MediaLibraryBuilder {
         Logger.shared.log("[MediaLibraryBuilder] Added \(songPids.count) songs to playlist")
     }
 
+    static func removePlaylistCoverArtwork(db: OpaquePointer?, containerPid: Int64) throws {
+        var tokens: [String] = []
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, "SELECT artwork_token FROM artwork_token WHERE entity_pid = ? AND entity_type = 1 AND artwork_type = 5", -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_int64(stmt, 1, containerPid)
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                if let raw = sqlite3_column_text(stmt, 0) {
+                    tokens.append(String(cString: raw))
+                }
+            }
+        }
+        sqlite3_finalize(stmt)
+
+        try executeSQL(db, "DELETE FROM best_artwork_token WHERE entity_pid = \(containerPid) AND entity_type = 1 AND artwork_type = 5")
+        try executeSQL(db, "DELETE FROM artwork_token WHERE entity_pid = \(containerPid) AND entity_type = 1 AND artwork_type = 5")
+
+        for token in tokens {
+            let escaped = token.sqlEscaped
+            try executeSQL(db, """
+                DELETE FROM artwork WHERE artwork_token = '\(escaped)' AND artwork_type = 5
+                AND NOT EXISTS (SELECT 1 FROM artwork_token WHERE artwork_token = '\(escaped)')
+            """)
+        }
+        Logger.shared.log("[MediaLibraryBuilder] Removed custom cover for playlist pid \(containerPid)")
+    }
+
     static func setPlaylistCoverArtwork(db: OpaquePointer?, containerPid: Int64, artworkToken: String, relativePath: String) throws {
         var stmt: OpaquePointer?
 

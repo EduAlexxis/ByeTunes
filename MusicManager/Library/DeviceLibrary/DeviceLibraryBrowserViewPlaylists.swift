@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 import UniformTypeIdentifiers
 import UIKit
 import ImageIO
@@ -98,6 +99,10 @@ extension DeviceLibraryBrowserView {
 
             Divider().overlay(hairlineColor).padding(.leading, 64)
 
+            smartPlaylistFilesButton
+
+            Divider().overlay(hairlineColor).padding(.leading, 64)
+
             if !isSelectionMode {
                 playlistFolderRows()
                 nativeSmartPlaylistRows()
@@ -162,6 +167,9 @@ extension DeviceLibraryBrowserView {
             }
         }
         .padding(.horizontal)
+        .fileImporter(isPresented: $showingSmartImporter, allowedContentTypes: [.item]) { result in
+            handleSmartPlaylistImport(result.map { [$0] })
+        }
         .alert("New Folder", isPresented: $showingNewFolderPrompt) {
             TextField("Folder Name", text: $newFolderName)
             Button("Cancel", role: .cancel) {}
@@ -282,6 +290,16 @@ extension DeviceLibraryBrowserView {
                 } else {
                     manager.playlistParents[containerPid] = folderPid
                 }
+            case .removeCoverArtwork(let containerPid):
+                if let idx = playlists.firstIndex(where: { $0.pid == containerPid }) {
+                    playlists[idx].coverImage = nil
+                }
+            case .setDescription(let containerPid, let text):
+                if text.isEmpty {
+                    manager.playlistDescriptions.removeValue(forKey: containerPid)
+                } else {
+                    manager.playlistDescriptions[containerPid] = text
+                }
             case .deleteFolder(let containerPid):
                 manager.playlistFolders.removeAll { $0.pid == containerPid }
                 manager.playlistParents = manager.playlistParents.filter { $0.value != containerPid }
@@ -312,6 +330,34 @@ extension DeviceLibraryBrowserView {
 
         return ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                Menu {
+                    playlistCoverActions(current)
+                } label: {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color(.tertiarySystemGroupedBackground))
+                        if let cover = current.coverImage {
+                            Image(uiImage: cover)
+                                .resizable()
+                                .scaledToFill()
+                        } else {
+                            Image(systemName: "music.note.list")
+                                .font(.system(size: 36))
+                                .foregroundStyle(mutedTextColor)
+                        }
+                    }
+                    .frame(width: 140, height: 140)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(alignment: .bottomTrailing) {
+                        Image(systemName: "photo")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 28, height: 28)
+                            .background(Circle().fill(Color.black.opacity(0.55)))
+                            .padding(6)
+                    }
+                }
+
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 10) {
                         Text(current.name)
@@ -319,20 +365,43 @@ extension DeviceLibraryBrowserView {
                             .foregroundStyle(strongTextColor)
                             .lineLimit(1)
 
-                        Button {
-                            renamePlaylistPid = current.pid
-                            renamePlaylistText = current.name
-                            showingRenamePlaylistPrompt = true
+                        Menu {
+                            Button {
+                                renamePlaylistPid = current.pid
+                                renamePlaylistText = current.name
+                                showingRenamePlaylistPrompt = true
+                            } label: {
+                                Label("Rename", systemImage: "pencil")
+                            }
+                            playlistCoverActions(current)
                         } label: {
-                            Image(systemName: "pencil.circle.fill")
+                            Image(systemName: "ellipsis.circle.fill")
                                 .font(.system(size: 22))
                                 .foregroundStyle(mutedTextColor)
                         }
-                        .buttonStyle(.plain)
                     }
                     Text("\(current.songs.count) song\(current.songs.count == 1 ? "" : "s")")
                         .font(.footnote.weight(.medium))
                         .foregroundStyle(mutedTextColor)
+                    Button {
+                        descriptionEditorPid = current.pid
+                        descriptionDraft = manager.playlistDescriptions[current.pid] ?? ""
+                        showingDescriptionEditor = true
+                    } label: {
+                        if let description = manager.playlistDescriptions[current.pid], !description.isEmpty {
+                            Text(description)
+                                .font(.subheadline)
+                                .foregroundStyle(mutedTextColor)
+                                .multilineTextAlignment(.leading)
+                                .lineLimit(4)
+                        } else {
+                            Text("Add Description")
+                                .font(.subheadline)
+                                .foregroundStyle(Color.accentColor)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 2)
                 }
 
                 HStack(spacing: 12) {
@@ -393,6 +462,31 @@ extension DeviceLibraryBrowserView {
             )
             .presentationDetents([.medium, .large])
         }
+        .photosPicker(isPresented: $showingCoverPhotoPicker, selection: $coverPhotoItem, matching: .images)
+        .onChange(of: coverPhotoItem) { newItem in
+            guard let newItem, let pid = coverPhotoPid else { return }
+            Task {
+                if let data = try? await newItem.loadTransferable(type: Data.self),
+                   let cropped = PlaylistNamingView.squareCroppedJPEGData(from: data) {
+                    await MainActor.run {
+                        applyPlaylistActions([.setCoverArtwork(containerPid: pid, imageData: cropped)])
+                    }
+                }
+                await MainActor.run {
+                    coverPhotoItem = nil
+                    coverPhotoPid = nil
+                }
+            }
+        }
+        .sheet(isPresented: $showingDescriptionEditor) {
+            PlaylistDescriptionSheet(text: $descriptionDraft) {
+                if let pid = descriptionEditorPid {
+                    applyPlaylistActions([.setDescription(containerPid: pid, text: descriptionDraft.trimmingCharacters(in: .whitespacesAndNewlines))])
+                }
+                descriptionEditorPid = nil
+            }
+            .presentationDetents([.medium, .large])
+        }
         .alert("Rename Playlist", isPresented: $showingRenamePlaylistPrompt) {
             TextField("Name", text: $renamePlaylistText)
             Button("Cancel", role: .cancel) { renamePlaylistPid = nil }
@@ -401,6 +495,30 @@ extension DeviceLibraryBrowserView {
                     applyPlaylistActions([.rename(containerPid: pid, newName: renamePlaylistText)])
                 }
                 renamePlaylistPid = nil
+            }
+        }
+    }
+
+    @ViewBuilder
+    func playlistCoverActions(_ playlist: PlaylistEntry) -> some View {
+        Button {
+            if let data = PlaylistCoverGenerator.randomCover() {
+                applyPlaylistActions([.setCoverArtwork(containerPid: playlist.pid, imageData: data)])
+            }
+        } label: {
+            Label("Generate Gradient Cover", systemImage: "wand.and.stars")
+        }
+        Button {
+            coverPhotoPid = playlist.pid
+            showingCoverPhotoPicker = true
+        } label: {
+            Label("Choose Cover Photo…", systemImage: "photo")
+        }
+        if playlist.coverImage != nil {
+            Button(role: .destructive) {
+                applyPlaylistActions([.removeCoverArtwork(containerPid: playlist.pid)])
+            } label: {
+                Label("Remove Cover", systemImage: "trash")
             }
         }
     }
@@ -431,10 +549,13 @@ extension DeviceLibraryBrowserView {
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(strongTextColor)
                     .lineLimit(1)
-                Text(song.artist)
-                    .font(.system(size: 13))
-                    .foregroundStyle(mutedTextColor)
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(song.artist)
+                        .font(.system(size: 13))
+                        .foregroundStyle(mutedTextColor)
+                        .lineLimit(1)
+                    songQualityBadges(song)
+                }
             }
             Spacer()
         }

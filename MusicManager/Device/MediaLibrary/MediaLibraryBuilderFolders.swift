@@ -63,6 +63,41 @@ extension MediaLibraryBuilder {
         Logger.shared.log("[MediaLibraryBuilder] Created playlist folder '\(name)' with pid: \(containerPid)")
     }
 
+    static func readPlaylistDescriptions(db: OpaquePointer?) -> [Int64: String] {
+        var result: [Int64: String] = [:]
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, "SELECT container_pid, description FROM container WHERE description IS NOT NULL AND description <> '' AND smart_is_folder = 0", -1, &stmt, nil) == SQLITE_OK {
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                if let raw = sqlite3_column_text(stmt, 1) {
+                    result[sqlite3_column_int64(stmt, 0)] = String(cString: raw)
+                }
+            }
+        }
+        sqlite3_finalize(stmt)
+        return result
+    }
+
+    static func setPlaylistDescription(db: OpaquePointer?, containerPid: Int64, text: String) throws {
+        let sql = "UPDATE container SET description = ?, date_modified = ? WHERE container_pid = ?"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            let error = String(cString: sqlite3_errmsg(db))
+            sqlite3_finalize(stmt)
+            throw MediaLibraryError.insertFailed("description: \(error)")
+        }
+        let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        sqlite3_bind_text(stmt, 1, text, -1, transient)
+        sqlite3_bind_double(stmt, 2, Date().timeIntervalSinceReferenceDate)
+        sqlite3_bind_int64(stmt, 3, containerPid)
+        let rc = sqlite3_step(stmt)
+        let error = String(cString: sqlite3_errmsg(db))
+        sqlite3_finalize(stmt)
+        guard rc == SQLITE_DONE else {
+            throw MediaLibraryError.insertFailed("description: \(error)")
+        }
+        Logger.shared.log("[MediaLibraryBuilder] Set description for playlist \(containerPid)")
+    }
+
     static func movePlaylist(db: OpaquePointer?, containerPid: Int64, toFolder folderPid: Int64) throws {
         let now = Date().timeIntervalSinceReferenceDate
         try executeSQL(db, "UPDATE container SET parent_pid = \(folderPid), date_modified = \(now) WHERE container_pid = \(containerPid)")
