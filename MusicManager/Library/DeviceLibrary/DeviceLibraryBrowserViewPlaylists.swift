@@ -94,6 +94,11 @@ extension DeviceLibraryBrowserView {
 
             Divider().overlay(hairlineColor).padding(.leading, 64)
 
+            if !isSelectionMode {
+                nativeSmartPlaylistRows()
+                    .id(refreshSmartPlaylistList)
+            }
+
             ForEach(playlists) { playlist in
                 Group {
                     if isSelectionMode {
@@ -122,11 +127,18 @@ extension DeviceLibraryBrowserView {
                                     Label("Pin to Music", systemImage: "pin")
                                 }
                             }
-                            if SmartPlaylistStore.record(forPid: playlist.pid) != nil {
+                            if SmartPlaylistStore.record(forPid: playlist.pid)?.rule != nil {
                                 Button {
                                     refreshSmartPlaylist(playlist)
                                 } label: {
                                     Label("Refresh Smart Playlist", systemImage: "arrow.triangle.2.circlepath")
+                                }
+                                if SmartPlaylistStore.record(forPid: playlist.pid)?.rule?.criteria() != nil {
+                                    Button {
+                                        convertToNativeSmartPlaylist(playlist)
+                                    } label: {
+                                        Label("Convert to Live Smart Playlist", systemImage: "wand.and.stars")
+                                    }
                                 }
                             }
                             Button(role: .destructive) {
@@ -155,21 +167,22 @@ extension DeviceLibraryBrowserView {
             }
         }
         .sheet(isPresented: $showingSmartPlaylistBuilder) {
-            SmartPlaylistBuilderView(songs: songs) { name, songPids, rule, coverImageData in
-                applyPlaylistActions([.createWithSongs(name: name, songPids: songPids)]) {
-                    guard let matched = playlists.first(where: { $0.name == name }) else { return }
-                    SmartPlaylistStore.save(SmartPlaylistRecord(name: matched.name, containerPid: matched.pid, rule: rule))
-                    if let coverImageData {
-                        applyPlaylistActions([.setCoverArtwork(containerPid: matched.pid, imageData: coverImageData)])
-                    }
+            SmartPlaylistEditorView(songs: songs) { name, criteria, limit, coverImageData in
+                let newPid = Int64.random(in: 1_000_000_000...9_999_999_999_999)
+                var actions: [DeviceManager.PlaylistAction] = [
+                    .createNativeSmart(containerPid: newPid, name: name, criteria: criteria, limit: limit)
+                ]
+                if let coverImageData {
+                    actions.append(.setCoverArtwork(containerPid: newPid, imageData: coverImageData))
                 }
+                applyPlaylistActions(actions)
             }
         }
     }
 
     func refreshSmartPlaylist(_ playlist: PlaylistEntry) {
-        guard let record = SmartPlaylistStore.record(forPid: playlist.pid) else { return }
-        let matchingPids = Set(record.rule.matchingSongs(in: songs).map(\.itemPid))
+        guard let record = SmartPlaylistStore.record(forPid: playlist.pid), let rule = record.rule else { return }
+        let matchingPids = Set(rule.matchingSongs(in: songs).map(\.itemPid))
         let currentPids = Set(playlist.songs.map(\.itemPid))
         guard matchingPids != currentPids else { return }
 
@@ -229,6 +242,8 @@ extension DeviceLibraryBrowserView {
                 manager.pinnedPlaylistPids.insert(containerPid)
             case .unpin(let containerPid):
                 manager.pinnedPlaylistPids.remove(containerPid)
+            case .createNativeSmart:
+                break
             }
         }
         

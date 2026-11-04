@@ -61,6 +61,7 @@ struct DeviceLibraryBrowserView: View {
     @State var cachedArtistEntries: [ArtistEntry] = []
     @State var cachedAlbumEntries: [AlbumEntry] = []
     @State var playlists: [PlaylistEntry] = []
+    @State var refreshSmartPlaylistList = 0
     @State var isSyncingPlaylists = false
     @State var showingNewPlaylistPrompt = false
     @State var showingSmartPlaylistBuilder = false

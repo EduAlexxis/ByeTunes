@@ -18,6 +18,7 @@ extension DeviceManager {
         case setCoverArtwork(containerPid: Int64, imageData: Data)
         case pin(containerPid: Int64)
         case unpin(containerPid: Int64)
+        case createNativeSmart(containerPid: Int64, name: String, criteria: SmartCriteriaGroup, limit: SmartPlaylistLimit)
     }
 
     static func sha256Hex(_ data: Data) -> String {
@@ -112,6 +113,8 @@ extension DeviceManager {
                         try MediaLibraryBuilder.pinPlaylist(db: db, containerPid: pid)
                     case .unpin(let pid):
                         try MediaLibraryBuilder.unpinPlaylist(db: db, containerPid: pid)
+                    case .createNativeSmart(let containerPid, let name, let criteria, let limit):
+                        try MediaLibraryBuilder.createNativeSmartPlaylist(db: db, containerPid: containerPid, name: name, criteria: criteria, limit: limit)
                     }
                 }
                 sqlite3_close(db)

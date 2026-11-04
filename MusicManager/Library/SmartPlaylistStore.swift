@@ -4,7 +4,9 @@ struct SmartPlaylistRecord: Codable, Identifiable {
     var id: Int64 { containerPid }
     let name: String
     let containerPid: Int64
-    let rule: SmartPlaylistRule
+    var rule: SmartPlaylistRule?
+    var criteria: SmartCriteriaGroup?
+    var limit: SmartPlaylistLimit?
 }
 
 enum SmartPlaylistStore {

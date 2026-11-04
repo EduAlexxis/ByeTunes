@@ -243,7 +243,7 @@ extension DeviceManager {
         }
         semShm.waitForTransfer()
 
-        let fetched = withStagedMediaLibrary(dbData: dbData, walData: walData, shmData: shmData, label: "playlist_fetch") { stagedDbURL -> (playlists: [(name: String, pid: Int64, songPids: [Int64], coverRelativePath: String?)], pinned: Set<Int64>)? in
+        let fetched = withStagedMediaLibrary(dbData: dbData, walData: walData, shmData: shmData, label: "playlist_fetch") { stagedDbURL -> (playlists: [(name: String, pid: Int64, songPids: [Int64], coverRelativePath: String?)], pinned: Set<Int64>, smart: [NativeSmartPlaylist])? in
             var db: OpaquePointer?
             guard sqlite3_open(stagedDbURL.path, &db) == SQLITE_OK else {
                 if db != nil { sqlite3_close(db) }
@@ -294,12 +294,16 @@ extension DeviceManager {
                 }
             }
             sqlite3_finalize(stmt)
-            return (playlists, MediaLibraryBuilder.pinnedPlaylistPids(db: db))
+            return (playlists, MediaLibraryBuilder.pinnedPlaylistPids(db: db), MediaLibraryBuilder.readNativeSmartPlaylists(db: db))
         }
 
         let pinnedPids = fetched?.pinned ?? []
+        let smartPlaylists = fetched?.smart
         DispatchQueue.main.async {
             self.pinnedPlaylistPids = pinnedPids
+            if let smartPlaylists {
+                self.nativeSmartPlaylists = smartPlaylists
+            }
         }
         completion(fetched?.playlists ?? [])
     }
