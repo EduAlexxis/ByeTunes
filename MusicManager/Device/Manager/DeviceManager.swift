@@ -278,10 +278,10 @@ class DeviceManager: ObservableObject {
             return custom
         }
         let base = Self.sharedContainerURL ?? URL.documentsDirectory
+        let visible = base.appendingPathComponent("db_snapshots", isDirectory: true)
         let hidden = base.appendingPathComponent(".db_snapshots", isDirectory: true)
-        let legacy = base.appendingPathComponent("db_snapshots", isDirectory: true)
-        migrateLegacySnapshotsDirectory(from: legacy, to: hidden)
-        return hidden
+        migrateLegacySnapshotsDirectory(from: hidden, to: visible)
+        return visible
     }
 
     func customSnapshotsDirectory() -> URL? {
@@ -343,7 +343,21 @@ class DeviceManager: ObservableObject {
     let snapshotMusicManifestName = "music_files.txt"
     let snapshotArtworkManifestName = "artwork_paths.txt"
     let snapshotArtworkDirectory = "Artwork/Originals"
-    let snapshotFullBackupDirectory = ".iTunesFullBackup"
+    let snapshotFullBackupDirectory = "iTunes Full Backup"
+    let legacySnapshotFullBackupDirectory = ".iTunesFullBackup"
+
+    func existingFullBackupRoot(in snapshotDir: URL) -> URL? {
+        let fm = FileManager.default
+        let visible = snapshotDir.appendingPathComponent(snapshotFullBackupDirectory, isDirectory: true)
+        let legacy = snapshotDir.appendingPathComponent(legacySnapshotFullBackupDirectory, isDirectory: true)
+        if fm.fileExists(atPath: visible.path) { return visible }
+        guard fm.fileExists(atPath: legacy.path) else { return nil }
+        if (try? fm.moveItem(at: legacy, to: visible)) != nil {
+            Logger.shared.log("[Backup] Made full backup folder visible: \(snapshotDir.lastPathComponent)")
+            return visible
+        }
+        return legacy
+    }
     
     // MARK: - Setup
     private init() {
@@ -415,27 +429,27 @@ class DeviceManager: ObservableObject {
         autoReconnectTimer = timer
     }
 
-    func migrateLegacySnapshotsDirectory(from legacy: URL, to hidden: URL) {
+    func migrateLegacySnapshotsDirectory(from legacy: URL, to visible: URL) {
         let fm = FileManager.default
         guard fm.fileExists(atPath: legacy.path) else { return }
 
         do {
-            if !fm.fileExists(atPath: hidden.path) {
-                try fm.moveItem(at: legacy, to: hidden)
-                Logger.shared.log("[Backup] Migrated snapshots folder to hidden storage")
+            if !fm.fileExists(atPath: visible.path) {
+                try fm.moveItem(at: legacy, to: visible)
+                Logger.shared.log("[Backup] Migrated snapshots folder to visible storage")
                 return
             }
 
-            let entries = try fm.contentsOfDirectory(at: legacy, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+            let entries = try fm.contentsOfDirectory(at: legacy, includingPropertiesForKeys: nil, options: [])
             for entry in entries {
-                let destination = hidden.appendingPathComponent(entry.lastPathComponent, isDirectory: entry.hasDirectoryPath)
+                let destination = visible.appendingPathComponent(entry.lastPathComponent, isDirectory: entry.hasDirectoryPath)
                 if fm.fileExists(atPath: destination.path) {
                     try? fm.removeItem(at: destination)
                 }
                 try fm.moveItem(at: entry, to: destination)
             }
             try fm.removeItem(at: legacy)
-            Logger.shared.log("[Backup] Merged legacy snapshots into hidden storage")
+            Logger.shared.log("[Backup] Merged legacy snapshots into visible storage")
         } catch {
             Logger.shared.log("[Backup] Failed to migrate legacy snapshots folder: \(error)")
         }

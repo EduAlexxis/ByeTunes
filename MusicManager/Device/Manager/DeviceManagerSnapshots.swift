@@ -13,7 +13,7 @@ extension DeviceManager {
             return
         }
         for entry in entries where entry.hasDirectoryPath && entry.lastPathComponent.hasPrefix("snapshot_") && entry.standardizedFileURL != newest.standardizedFileURL {
-            let entryIsFull = fm.fileExists(atPath: entry.appendingPathComponent(snapshotFullBackupDirectory).path)
+            let entryIsFull = existingFullBackupRoot(in: entry) != nil
             guard entryIsFull == isFull else { continue }
             try? fm.removeItem(at: entry)
             Logger.shared.log("[Backup] Removed older \(isFull ? "full" : "light") snapshot: \(entry.lastPathComponent)")
@@ -197,8 +197,7 @@ extension DeviceManager {
 
             let fm = FileManager.default
             let dbLocal = externalURL.appendingPathComponent("MediaLibrary.sqlitedb")
-            let fullBackupRoot = externalURL.appendingPathComponent(self.snapshotFullBackupDirectory, isDirectory: true)
-            guard fm.fileExists(atPath: dbLocal.path) || fm.fileExists(atPath: fullBackupRoot.path) else {
+            guard fm.fileExists(atPath: dbLocal.path) || self.existingFullBackupRoot(in: externalURL) != nil else {
                 completion(false, "This doesn't look like a ByeTunes backup folder")
                 return
             }
@@ -220,8 +219,7 @@ extension DeviceManager {
 
             let fm = FileManager.default
             let dbLocal = externalURL.appendingPathComponent("MediaLibrary.sqlitedb")
-            let fullBackupRoot = externalURL.appendingPathComponent(self.snapshotFullBackupDirectory, isDirectory: true)
-            guard fm.fileExists(atPath: dbLocal.path) || fm.fileExists(atPath: fullBackupRoot.path) else {
+            guard fm.fileExists(atPath: dbLocal.path) || self.existingFullBackupRoot(in: externalURL) != nil else {
                 completion(false, "This doesn't look like a ByeTunes backup folder")
                 return
             }

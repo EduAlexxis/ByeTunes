@@ -11,9 +11,8 @@ extension DeviceManager {
         progress?("Preparing restore...", nil)
         let fm = FileManager.default
         let dbLocal = snapshotDir.appendingPathComponent("MediaLibrary.sqlitedb")
-        let fullBackupRoot = snapshotDir.appendingPathComponent(snapshotFullBackupDirectory, isDirectory: true)
 
-        if fm.fileExists(atPath: fullBackupRoot.path) {
+        if let fullBackupRoot = existingFullBackupRoot(in: snapshotDir) {
             restoreFullITunesBackupCopy(fullBackupRoot, progress: progress, completion: completion)
             return
         }

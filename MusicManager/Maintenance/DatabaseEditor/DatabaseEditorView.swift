@@ -74,6 +74,13 @@ struct DatabaseEditorView: View {
                         Label("Inject Into Device", systemImage: "square.and.arrow.up.on.square")
                     }
                     .disabled(isBusy || !manager.heartbeatReady)
+
+                    Button {
+                        exportDatabase()
+                    } label: {
+                        Label("Export Database", systemImage: "square.and.arrow.up")
+                    }
+                    .disabled(isBusy)
                 } header: {
                     Text("Changes")
                 } footer: {
@@ -174,6 +181,23 @@ struct DatabaseEditorView: View {
                     errorMessage = error.localizedDescription
                 }
             }
+        }
+    }
+
+    private func exportDatabase() {
+        store.commitForExport()
+        let fm = FileManager.default
+        let exportDir = fm.temporaryDirectory.appendingPathComponent("DatabaseExport-\(UUID().uuidString)", isDirectory: true)
+        let exportURL = exportDir.appendingPathComponent("MediaLibrary.sqlitedb")
+        do {
+            try fm.createDirectory(at: exportDir, withIntermediateDirectories: true)
+            try fm.copyItem(at: store.workingURL, to: exportURL)
+        } catch {
+            errorMessage = error.localizedDescription
+            return
+        }
+        ShareSheetHelper.share(items: [exportURL]) {
+            try? fm.removeItem(at: exportDir)
         }
     }
 

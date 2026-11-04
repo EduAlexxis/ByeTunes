@@ -50,6 +50,9 @@ extension DeviceManager {
             if let shmData, !shmData.isEmpty {
                 try shmData.write(to: tempDir.appendingPathComponent("MediaLibrary.sqlitedb-shm"))
             }
+            if let originalCount = songCount(inLibraryAt: dbURL) {
+                try String(originalCount).write(to: tempDir.appendingPathComponent(stagedSongCountFileName), atomically: true, encoding: .utf8)
+            }
         } catch {
             Logger.shared.log("[DeviceManager] Failed to stage MediaLibrary for \(label): \(error)")
             try? fileManager.removeItem(at: tempDir)
@@ -59,7 +62,59 @@ extension DeviceManager {
         return (tempDir, dbURL, self.resolvePrimaryMusicDirectory())
     }
 
-    func commitStagedMediaLibrary(localDbURL: URL) -> Bool {
+    var stagedSongCountFileName: String { "original_song_count.txt" }
+
+    func songCount(inLibraryAt dbURL: URL) -> Int? {
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(dbURL.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+            if db != nil { sqlite3_close(db) }
+            return nil
+        }
+        defer { sqlite3_close(db) }
+        return firstInt64Query(db: db, sql: "SELECT COUNT(*) FROM item").map(Int.init)
+    }
+
+    func stagedLibraryIsSafeToUpload(localDbURL: URL, allowSongRemoval: Bool) -> Bool {
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(localDbURL.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+            if db != nil { sqlite3_close(db) }
+            Logger.shared.log("[SafetyCheck] Edited library cannot be opened, upload blocked")
+            return false
+        }
+        var stmt: OpaquePointer?
+        var quickCheck = ""
+        if sqlite3_prepare_v2(db, "PRAGMA quick_check(1)", -1, &stmt, nil) == SQLITE_OK, sqlite3_step(stmt) == SQLITE_ROW,
+           let text = sqlite3_column_text(stmt, 0) {
+            quickCheck = String(cString: text)
+        }
+        sqlite3_finalize(stmt)
+        let newCount = firstInt64Query(db: db, sql: "SELECT COUNT(*) FROM item").map(Int.init)
+        sqlite3_close(db)
+
+        guard quickCheck == "ok", let newCount else {
+            Logger.shared.log("[SafetyCheck] Edited library failed integrity check (\(quickCheck.isEmpty ? "unreadable" : quickCheck)), upload blocked")
+            return false
+        }
+
+        let countFile = localDbURL.deletingLastPathComponent().appendingPathComponent(stagedSongCountFileName)
+        if let text = try? String(contentsOf: countFile, encoding: .utf8), let originalCount = Int(text.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            if newCount == 0 && originalCount > 0 {
+                Logger.shared.log("[SafetyCheck] Edited library has no songs but the original had \(originalCount), upload blocked")
+                return false
+            }
+            if !allowSongRemoval && newCount < originalCount {
+                Logger.shared.log("[SafetyCheck] Edited library lost songs (\(originalCount) -> \(newCount)), upload blocked")
+                return false
+            }
+        }
+        return true
+    }
+
+    func commitStagedMediaLibrary(localDbURL: URL, allowSongRemoval: Bool = false) -> Bool {
+        guard stagedLibraryIsSafeToUpload(localDbURL: localDbURL, allowSongRemoval: allowSongRemoval) else {
+            return false
+        }
+
         let tempDBPath = "/iTunes_Control/iTunes/MediaLibrary.sqlitedb.temp"
 
         let semUpload = DispatchSemaphore(value: 0)

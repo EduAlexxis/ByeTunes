@@ -60,7 +60,7 @@ extension DeviceManager {
                 return
             }
 
-            guard self.commitStagedMediaLibrary(localDbURL: context.dbURL) else {
+            guard self.commitStagedMediaLibrary(localDbURL: context.dbURL, allowSongRemoval: true) else {
                 completion(false, "Failed to upload the updated device library.")
                 return
             }
@@ -178,7 +178,7 @@ extension DeviceManager {
                 return
             }
 
-            guard self.commitStagedMediaLibrary(localDbURL: context.dbURL) else {
+            guard self.commitStagedMediaLibrary(localDbURL: context.dbURL, allowSongRemoval: true) else {
                 completion(false, "Failed to upload the updated device library.")
                 return
             }

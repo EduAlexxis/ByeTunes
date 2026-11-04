@@ -579,12 +579,10 @@ struct ManageBackupsView: View {
                 self.snapshots = list
 
                 manager.withSnapshotsDirectoryAccess {
-                    let fm = FileManager.default
                     let root = manager.snapshotsDirectoryURL
                     var flags: [String: Bool] = [:]
                     for snap in list {
-                        let fullMarker = root.appendingPathComponent(snap.folderName).appendingPathComponent(".iTunesFullBackup")
-                        flags[snap.folderName] = fm.fileExists(atPath: fullMarker.path)
+                        flags[snap.folderName] = manager.existingFullBackupRoot(in: root.appendingPathComponent(snap.folderName)) != nil
                     }
                     self.fullBackupFlags = flags
                 }
