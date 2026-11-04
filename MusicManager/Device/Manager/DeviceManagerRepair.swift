@@ -69,6 +69,11 @@ extension DeviceManager {
                 return
             }
 
+            if self.isRepairOperationCancelled(operationToken) {
+                completion(false, "Cancelled.")
+                return
+            }
+
             progress("Uploading repaired library...")
             guard self.commitStagedMediaLibrary(localDbURL: context.dbURL) else {
                 completion(false, "Failed to upload the repaired library.")

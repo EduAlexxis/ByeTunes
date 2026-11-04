@@ -68,6 +68,11 @@ extension DeviceManager {
                 return
             }
 
+            if self.isRepairOperationCancelled(operationToken) {
+                completion(.failed("Cancelled."))
+                return
+            }
+
             progress("Uploading library...")
             guard self.commitStagedMediaLibrary(localDbURL: context.dbURL) else {
                 completion(.failed("Failed to upload the library."))
@@ -125,6 +130,11 @@ extension DeviceManager {
 
             guard fixed > 0 else {
                 completion(true, "No favorites needed fixing.")
+                return
+            }
+
+            if self.isRepairOperationCancelled(operationToken) {
+                completion(false, "Cancelled.")
                 return
             }
 
@@ -188,6 +198,11 @@ extension DeviceManager {
                 return
             }
 
+            if self.isRepairOperationCancelled(operationToken) {
+                completion(false, "Cancelled.")
+                return
+            }
+
             progress("Uploading library...")
             guard self.commitStagedMediaLibrary(localDbURL: context.dbURL) else {
                 completion(false, "Failed to upload the library.")
@@ -196,6 +211,136 @@ extension DeviceManager {
 
             self.sendSyncFinishedNotification()
             completion(true, "Favorites playlist deleted.")
+        }
+    }
+
+    func enableFavoriting(progress: @escaping (String) -> Void, completion: @escaping (Bool, String) -> Void) {
+        let operationToken = beginRepairOperation()
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard self.ensureActiveTransport(reason: "enabling favoriting") else {
+                completion(false, "Device connection unavailable.")
+                return
+            }
+
+            progress("Preparing to enable favoriting...")
+            let killed = self.terminateMusicAppIfRunning()
+            Logger.shared.log("[SyncLifecycle] Music pre-kill for enabling favoriting \(killed ? "completed" : "skipped/failed")")
+
+            guard let context = self.stageCurrentMediaLibraryForMutation(label: "favoriting_enable") else {
+                completion(false, "Could not stage MediaLibrary.sqlitedb.")
+                return
+            }
+            defer { try? FileManager.default.removeItem(at: context.tempDir) }
+
+            if self.isRepairOperationCancelled(operationToken) {
+                completion(false, "Cancelled.")
+                return
+            }
+
+            var db: OpaquePointer?
+            guard sqlite3_open(context.dbURL.path, &db) == SQLITE_OK else {
+                if db != nil { sqlite3_close(db) }
+                completion(false, "Could not open MediaLibrary.sqlitedb.")
+                return
+            }
+
+            progress("Updating songs...")
+            var updated = 0
+            do {
+                updated = try MediaLibraryBuilder.enableFavoritingForAllSongs(db: db)
+                _ = self.sqliteExec(db, "PRAGMA wal_checkpoint(TRUNCATE)")
+                _ = self.sqliteExec(db, "PRAGMA journal_mode=DELETE")
+                sqlite3_close(db)
+            } catch {
+                sqlite3_close(db)
+                Logger.shared.log("[DeviceManager] Enabling favoriting failed: \(error)")
+                completion(false, "Could not update the songs.")
+                return
+            }
+
+            guard updated > 0 else {
+                completion(true, "All songs can already be favorited.")
+                return
+            }
+
+            if self.isRepairOperationCancelled(operationToken) {
+                completion(false, "Cancelled.")
+                return
+            }
+
+            progress("Uploading library...")
+            guard self.commitStagedMediaLibrary(localDbURL: context.dbURL) else {
+                completion(false, "Failed to upload the library.")
+                return
+            }
+
+            self.sendSyncFinishedNotification()
+            completion(true, "Favoriting enabled for \(updated) song\(updated == 1 ? "" : "s").")
+        }
+    }
+
+    func removeGhostSongs(progress: @escaping (String) -> Void, completion: @escaping (Bool, String) -> Void) {
+        let operationToken = beginRepairOperation()
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard self.ensureActiveTransport(reason: "removing ghost songs") else {
+                completion(false, "Device connection unavailable.")
+                return
+            }
+
+            progress("Preparing to remove ghost songs...")
+            let killed = self.terminateMusicAppIfRunning()
+            Logger.shared.log("[SyncLifecycle] Music pre-kill for ghost song removal \(killed ? "completed" : "skipped/failed")")
+
+            guard let context = self.stageCurrentMediaLibraryForMutation(label: "ghost_songs_remove") else {
+                completion(false, "Could not stage MediaLibrary.sqlitedb.")
+                return
+            }
+            defer { try? FileManager.default.removeItem(at: context.tempDir) }
+
+            if self.isRepairOperationCancelled(operationToken) {
+                completion(false, "Cancelled.")
+                return
+            }
+
+            var db: OpaquePointer?
+            guard sqlite3_open(context.dbURL.path, &db) == SQLITE_OK else {
+                if db != nil { sqlite3_close(db) }
+                completion(false, "Could not open MediaLibrary.sqlitedb.")
+                return
+            }
+
+            progress("Removing ghost songs...")
+            var removed = 0
+            do {
+                removed = try MediaLibraryBuilder.removeGhostSongs(db: db)
+                _ = self.sqliteExec(db, "PRAGMA wal_checkpoint(TRUNCATE)")
+                _ = self.sqliteExec(db, "PRAGMA journal_mode=DELETE")
+                sqlite3_close(db)
+            } catch {
+                sqlite3_close(db)
+                Logger.shared.log("[DeviceManager] Ghost song removal failed: \(error)")
+                completion(false, "Could not remove the ghost songs.")
+                return
+            }
+
+            guard removed > 0 else {
+                completion(true, "No ghost songs found.")
+                return
+            }
+
+            if self.isRepairOperationCancelled(operationToken) {
+                completion(false, "Cancelled.")
+                return
+            }
+
+            progress("Uploading library...")
+            guard self.commitStagedMediaLibrary(localDbURL: context.dbURL, allowSongRemoval: true) else {
+                completion(false, "Failed to upload the library.")
+                return
+            }
+
+            self.sendSyncFinishedNotification()
+            completion(true, "Removed \(removed) ghost song\(removed == 1 ? "" : "s").")
         }
     }
 }

@@ -84,10 +84,61 @@ extension MediaLibraryBuilder {
         return refreshed
     }
 
+    static func enableFavoritingForAllSongs(db: OpaquePointer?) throws -> Int {
+        let placeholder = "(9000000000 + ABS(item_pid % 900000000))"
+        try executeSQL(db, """
+            UPDATE item_store SET
+                cloud_in_my_library = 1,
+                cloud_status = 8,
+                storefront_id = CASE WHEN storefront_id = 0 THEN 143441 ELSE storefront_id END,
+                store_item_id = CASE WHEN store_item_id > 0 THEN store_item_id ELSE \(placeholder) END,
+                store_saga_id = CASE WHEN store_item_id > 0 THEN store_item_id ELSE \(placeholder) END,
+                subscription_store_item_id = CASE WHEN subscription_store_item_id > 0 THEN subscription_store_item_id ELSE \(placeholder) END,
+                store_playlist_id = CASE WHEN store_playlist_id > 0 THEN store_playlist_id ELSE \(placeholder) END
+            WHERE item_pid IN (SELECT item_pid FROM item WHERE base_location_id > 0)
+            AND (cloud_in_my_library = 0 OR store_saga_id = 0)
+        """)
+        let updated = Int(sqlite3_changes(db))
+        Logger.shared.log("[MediaLibraryBuilder] Enabled favoriting for \(updated) songs")
+        return updated
+    }
+
+    static func removeGhostSongs(db: OpaquePointer?) throws -> Int {
+        var pids: [Int64] = []
+        var stmt: OpaquePointer?
+        let sql = """
+            SELECT g.item_pid FROM item g
+            JOIN item_extra ge ON ge.item_pid = g.item_pid
+            WHERE g.base_location_id = 0 AND g.in_my_library = 1
+            AND EXISTS (
+                SELECT 1 FROM item r
+                JOIN item_extra re ON re.item_pid = r.item_pid
+                WHERE r.item_pid <> g.item_pid AND r.base_location_id > 0
+                AND r.album_pid = g.album_pid AND re.title = ge.title
+            )
+        """
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                pids.append(sqlite3_column_int64(stmt, 0))
+            }
+        }
+        sqlite3_finalize(stmt)
+
+        var removed = 0
+        for pid in pids {
+            guard deleteItemRows(db: db, pid: pid) else { continue }
+            try executeSQL(db, "DELETE FROM container_item WHERE item_pid = \(pid)")
+            removed += 1
+        }
+        Logger.shared.log("[MediaLibraryBuilder] Removed \(removed) ghost songs")
+        return removed
+    }
+
     static func fixFavoritedLocalSongs(db: OpaquePointer?) throws -> Int {
         let now = Date().timeIntervalSinceReferenceDate
         let favoritedWithoutCatalogId = """
             item_pid IN (SELECT item_pid FROM item_stats WHERE liked_state = 2)
+            AND item_pid IN (SELECT item_pid FROM item WHERE base_location_id > 0)
             AND store_saga_id = 0
         """
         try executeSQL(db, """
@@ -105,6 +156,7 @@ extension MediaLibraryBuilder {
         try executeSQL(db, """
             UPDATE item_stats SET liked_state_changed = 1, liked_state_changed_date = \(now)
             WHERE liked_state = 2
+            AND item_pid IN (SELECT item_pid FROM item WHERE base_location_id > 0)
             AND item_pid IN (SELECT item_pid FROM item_store WHERE store_saga_id >= 9000000000)
         """)
         Logger.shared.log("[MediaLibraryBuilder] Fixed \(fixed) favorited songs without a catalog id")

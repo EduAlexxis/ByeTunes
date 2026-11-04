@@ -10,6 +10,9 @@ struct LibraryRepairView: View {
     @State private var isCreatingFavorites = false
     @State private var isFixingFavorites = false
     @State private var isDeletingFavorites = false
+    @State private var isRemovingGhosts = false
+    @State private var isEnablingFavoriting = false
+    @State private var showingEnableFavoritingAlert = false
     @State private var showingDeleteFavoritesAlert = false
     @State private var showingReplaceFavoritesAlert = false
     @State private var isRebuildingAlbumArtwork = false
@@ -319,6 +322,110 @@ struct LibraryRepairView: View {
                         .padding(.horizontal, 16)
                         .opacity((isDeletingFavorites || !manager.heartbeatReady) ? 0.55 : 1)
 
+                        Divider().padding(.leading, 56)
+
+                        HStack {
+                            Button {
+                                showingEnableFavoritingAlert = true
+                            } label: {
+                                HStack {
+                                    if isEnablingFavoriting {
+                                        ProgressView()
+                                            .frame(width: 28)
+                                    } else {
+                                        Image(systemName: "heart.circle.fill")
+                                            .font(.body)
+                                            .foregroundColor(.primary)
+                                            .frame(width: 28)
+                                    }
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(isEnablingFavoriting ? "Adding Favoriting Capabilities..." : "Add Favoriting Capabilities")
+                                            .font(.body)
+                                            .foregroundColor(.primary)
+                                        Text("Lets every song be favorited in Music.")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                            .multilineTextAlignment(.leading)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(isEnablingFavoriting || !manager.heartbeatReady)
+
+                            Spacer()
+
+                            Button {
+                                showInfo(
+                                    "Add Favoriting Capabilities",
+                                    "Prepares every song in your library so it can be favorited later in the Music app, without coming back to ByeTunes. Songs added with ByeTunes already have this. Use it for songs added earlier. This can take a while on a large library."
+                                )
+                            } label: {
+                                infoButton
+                            }
+                            .buttonStyle(.plain)
+
+                            if !isEnablingFavoriting {
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundColor(Color(.systemGray3))
+                            }
+                        }
+                        .padding(.vertical, 14)
+                        .padding(.horizontal, 16)
+                        .opacity((isEnablingFavoriting || !manager.heartbeatReady) ? 0.55 : 1)
+
+                        Divider().padding(.leading, 56)
+
+                        HStack {
+                            Button {
+                                removeGhostSongs()
+                            } label: {
+                                HStack {
+                                    if isRemovingGhosts {
+                                        ProgressView()
+                                            .frame(width: 28)
+                                    } else {
+                                        GhostIcon(height: 19)
+                                            .frame(width: 28)
+                                    }
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(isRemovingGhosts ? "Removing Ghost Songs..." : "Remove Ghost Songs")
+                                            .font(.body)
+                                            .foregroundColor(.primary)
+                                        Text("Removes unplayable duplicates in Favorites.")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                            .multilineTextAlignment(.leading)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(isRemovingGhosts || !manager.heartbeatReady)
+
+                            Spacer()
+
+                            Button {
+                                showInfo(
+                                    "Remove Ghost Songs",
+                                    "Removes greyed-out duplicate songs that cannot be played, usually left behind after favoriting. Only entries with no audio file that have a playable copy of the same song are removed. Your real songs are not touched."
+                                )
+                            } label: {
+                                infoButton
+                            }
+                            .buttonStyle(.plain)
+
+                            if !isRemovingGhosts {
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundColor(Color(.systemGray3))
+                            }
+                        }
+                        .padding(.vertical, 14)
+                        .padding(.horizontal, 16)
+                        .opacity((isRemovingGhosts || !manager.heartbeatReady) ? 0.55 : 1)
+
                         if manager.supportsIOS26ArtworkRepair {
                             Divider().padding(.leading, 56)
 
@@ -460,7 +567,7 @@ struct LibraryRepairView: View {
                 .zIndex(100)
             }
 
-            if isFixingArtwork || isRebuildingAlbumArtwork || isRunningRepairDoctor || isFixingAlphabeticalOrder || isCreatingFavorites || isFixingFavorites || isDeletingFavorites {
+            if isFixingArtwork || isRebuildingAlbumArtwork || isRunningRepairDoctor || isFixingAlphabeticalOrder || isCreatingFavorites || isFixingFavorites || isDeletingFavorites || isEnablingFavoriting || isRemovingGhosts {
                 artworkFixPopup
                     .transition(.opacity.combined(with: .scale(scale: 0.97)))
             }
@@ -471,6 +578,8 @@ struct LibraryRepairView: View {
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isCreatingFavorites)
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isFixingFavorites)
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isDeletingFavorites)
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isEnablingFavoriting)
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isRemovingGhosts)
         .navigationTitle("Library Tools")
         .navigationBarTitleDisplayMode(.inline)
         .alert("Delete Favorites Playlist?", isPresented: $showingDeleteFavoritesAlert) {
@@ -480,6 +589,14 @@ struct LibraryRepairView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This removes the Favorites playlist from Music. Your songs and favorite marks stay, and you can create the playlist again later.")
+        }
+        .alert("Add Favoriting Capabilities?", isPresented: $showingEnableFavoritingAlert) {
+            Button("Continue") {
+                enableFavoriting()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This prepares every song in your library so it can be favorited in Music. It may take a long time with a large library, so keep ByeTunes open and your device connected.")
         }
         .alert("Replace Favorites Playlist?", isPresented: $showingReplaceFavoritesAlert) {
             Button("Replace", role: .destructive) {
@@ -507,13 +624,17 @@ struct LibraryRepairView: View {
                         .fill(Color.accentColor.opacity(0.12))
                         .frame(width: 58, height: 58)
 
-                    Image(systemName: isDeletingFavorites ? "heart.slash" : isFixingFavorites ? "heart.circle" : isCreatingFavorites ? "heart.fill" : (isRunningRepairDoctor ? "heart.text.square" : (isFixingAlphabeticalOrder ? "textformat.abc.dottedunderline" : (isExperimentalArtworkRefreshActive ? "wand.and.stars" : "photo.on.rectangle.angled"))))
-                        .font(.system(size: 25, weight: .semibold))
-                        .foregroundColor(.accentColor)
+                    if isRemovingGhosts {
+                        GhostIcon(height: 27, color: .accentColor)
+                    } else {
+                        Image(systemName: isEnablingFavoriting ? "heart.circle.fill" : isDeletingFavorites ? "heart.slash" : isFixingFavorites ? "heart.circle" : isCreatingFavorites ? "heart.fill" : (isRunningRepairDoctor ? "heart.text.square" : (isFixingAlphabeticalOrder ? "textformat.abc.dottedunderline" : (isExperimentalArtworkRefreshActive ? "wand.and.stars" : "photo.on.rectangle.angled"))))
+                            .font(.system(size: 25, weight: .semibold))
+                            .foregroundColor(.accentColor)
+                    }
                 }
 
                 VStack(spacing: 6) {
-                    Text(isDeletingFavorites ? "Delete Favorites Playlist" : isFixingFavorites ? "Fix Missing Favorites" : isCreatingFavorites ? "Create Favorites Playlist" : (isRunningRepairDoctor ? "Clean & Repair Library" : (isFixingAlphabeticalOrder ? "Fix Alphabetical Order" : (isExperimentalArtworkRefreshActive ? "Refreshing Metadata & Artwork" : "Fixing Artwork"))))
+                    Text(isRemovingGhosts ? "Remove Ghost Songs" : isEnablingFavoriting ? "Add Favoriting Capabilities" : isDeletingFavorites ? "Delete Favorites Playlist" : isFixingFavorites ? "Fix Missing Favorites" : isCreatingFavorites ? "Create Favorites Playlist" : (isRunningRepairDoctor ? "Clean & Repair Library" : (isFixingAlphabeticalOrder ? "Fix Alphabetical Order" : (isExperimentalArtworkRefreshActive ? "Refreshing Metadata & Artwork" : "Fixing Artwork"))))
                         .font(.headline)
                         .foregroundColor(.primary)
 
@@ -710,6 +831,46 @@ struct LibraryRepairView: View {
                 self.showToastMessage(
                     title: success ? message : "Delete Failed: \(message)",
                     icon: success ? "heart.slash.fill" : "exclamationmark.triangle.fill"
+                )
+            }
+        }
+    }
+
+    private func enableFavoriting() {
+        isEnablingFavoriting = true
+        updateArtworkFixProgress("Preparing to enable favoriting...")
+
+        manager.enableFavoriting { message in
+            DispatchQueue.main.async {
+                self.updateArtworkFixProgress(message)
+            }
+        } completion: { success, message in
+            DispatchQueue.main.async {
+                self.isEnablingFavoriting = false
+                guard !message.lowercased().contains("cancel") else { return }
+                self.showToastMessage(
+                    title: success ? message : "Enabling Favoriting Failed: \(message)",
+                    icon: success ? "heart.circle.fill" : "exclamationmark.triangle.fill"
+                )
+            }
+        }
+    }
+
+    private func removeGhostSongs() {
+        isRemovingGhosts = true
+        updateArtworkFixProgress("Preparing to remove ghost songs...")
+
+        manager.removeGhostSongs { message in
+            DispatchQueue.main.async {
+                self.updateArtworkFixProgress(message)
+            }
+        } completion: { success, message in
+            DispatchQueue.main.async {
+                self.isRemovingGhosts = false
+                guard !message.lowercased().contains("cancel") else { return }
+                self.showToastMessage(
+                    title: success ? message : "Ghost Song Removal Failed: \(message)",
+                    icon: success ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
                 )
             }
         }
