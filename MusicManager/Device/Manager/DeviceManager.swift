@@ -149,6 +149,8 @@ class DeviceManager: ObservableObject {
     @Published var pinnedPlaylistPids: Set<Int64> = []
     @Published var pinnedAlbumPids: Set<Int64> = []
     @Published var pinnedArtistNames: Set<String> = []
+    @Published var playlistFolders: [PlaylistFolderInfo] = []
+    @Published var playlistParents: [Int64: Int64] = [:]
     @Published var nativeSmartPlaylists: [NativeSmartPlaylist] = []
     @Published var connectionStatus: String = "Disconnected"
     @Published var hasValidExpectedPairingFile: Bool = false

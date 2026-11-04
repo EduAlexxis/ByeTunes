@@ -22,6 +22,9 @@ extension DeviceManager {
         case unpinAlbum(albumPid: Int64)
         case pinArtist(name: String)
         case unpinArtist(name: String)
+        case createFolder(containerPid: Int64, name: String)
+        case movePlaylist(containerPid: Int64, folderPid: Int64)
+        case deleteFolder(containerPid: Int64)
         case createNativeSmart(containerPid: Int64, name: String, criteria: SmartCriteriaGroup, limit: SmartPlaylistLimit)
     }
 
@@ -46,7 +49,7 @@ extension DeviceManager {
     func applyPlaylistEdits(actions: [PlaylistAction], completion: @escaping (Bool, String) -> Void) {
         let changesPins = actions.contains { action in
             switch action {
-            case .pin, .unpin, .pinAlbum, .unpinAlbum, .pinArtist, .unpinArtist:
+            case .pin, .unpin, .pinAlbum, .unpinAlbum, .pinArtist, .unpinArtist, .createFolder, .movePlaylist, .deleteFolder:
                 return true
             default:
                 return false
@@ -64,19 +67,19 @@ extension DeviceManager {
     private func performPlaylistEdits(actions: [PlaylistAction], completion: @escaping (Bool, String) -> Void) {
         let changesPins = actions.contains { action in
             switch action {
-            case .pin, .unpin, .pinAlbum, .unpinAlbum, .pinArtist, .unpinArtist:
+            case .pin, .unpin, .pinAlbum, .unpinAlbum, .pinArtist, .unpinArtist, .createFolder, .movePlaylist, .deleteFolder:
                 return true
             default:
                 return false
             }
         }
         if changesPins {
-            guard ensureActiveTransport(reason: "changing pins") else {
+            guard ensureActiveTransport(reason: "changing pins or folders") else {
                 completion(false, "Device connection unavailable.")
                 return
             }
             let killed = terminateMusicAppIfRunning()
-            Logger.shared.log("[SyncLifecycle] Music pre-kill for pin change \(killed ? "completed" : "skipped/failed")")
+            Logger.shared.log("[SyncLifecycle] Music pre-kill for pin or folder change \(killed ? "completed" : "skipped/failed")")
         }
 
         guard let staged = stageCurrentMediaLibraryForMutation(label: "playlist_edit") else {
@@ -125,6 +128,12 @@ extension DeviceManager {
                         try MediaLibraryBuilder.pinArtist(db: db, name: name)
                     case .unpinArtist(let name):
                         try MediaLibraryBuilder.unpinArtist(db: db, name: name)
+                    case .createFolder(let containerPid, let name):
+                        try MediaLibraryBuilder.createPlaylistFolder(db: db, containerPid: containerPid, name: name)
+                    case .movePlaylist(let containerPid, let folderPid):
+                        try MediaLibraryBuilder.movePlaylist(db: db, containerPid: containerPid, toFolder: folderPid)
+                    case .deleteFolder(let containerPid):
+                        try MediaLibraryBuilder.deletePlaylistFolder(db: db, containerPid: containerPid)
                     case .createNativeSmart(let containerPid, let name, let criteria, let limit):
                         try MediaLibraryBuilder.createNativeSmartPlaylist(db: db, containerPid: containerPid, name: name, criteria: criteria, limit: limit)
                     }

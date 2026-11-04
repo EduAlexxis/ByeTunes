@@ -62,6 +62,11 @@ struct DeviceLibraryBrowserView: View {
     @State var cachedAlbumEntries: [AlbumEntry] = []
     @State var playlists: [PlaylistEntry] = []
     @State var refreshSmartPlaylistList = 0
+    @State var showingNewFolderPrompt = false
+    @State var newFolderName = ""
+    @State var showingRenameFolderPrompt = false
+    @State var renameFolderPid: Int64? = nil
+    @State var renameFolderText = ""
     @State var isSyncingPlaylists = false
     @State var showingNewPlaylistPrompt = false
     @State var showingSmartPlaylistBuilder = false

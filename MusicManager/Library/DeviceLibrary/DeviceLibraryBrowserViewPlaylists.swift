@@ -94,12 +94,17 @@ extension DeviceLibraryBrowserView {
 
             Divider().overlay(hairlineColor).padding(.leading, 64)
 
+            newFolderButton
+
+            Divider().overlay(hairlineColor).padding(.leading, 64)
+
             if !isSelectionMode {
+                playlistFolderRows()
                 nativeSmartPlaylistRows()
                     .id(refreshSmartPlaylistList)
             }
 
-            ForEach(playlists) { playlist in
+            ForEach(playlists.filter { manager.playlistParents[$0.pid] == nil }) { playlist in
                 Group {
                     if isSelectionMode {
                         Button {
@@ -127,6 +132,7 @@ extension DeviceLibraryBrowserView {
                                     Label("Pin to Music", systemImage: "pin")
                                 }
                             }
+                            moveToFolderMenu(for: playlist)
                             if SmartPlaylistStore.record(forPid: playlist.pid)?.rule != nil {
                                 Button {
                                     refreshSmartPlaylist(playlist)
@@ -156,6 +162,21 @@ extension DeviceLibraryBrowserView {
             }
         }
         .padding(.horizontal)
+        .alert("New Folder", isPresented: $showingNewFolderPrompt) {
+            TextField("Folder Name", text: $newFolderName)
+            Button("Cancel", role: .cancel) {}
+            Button("Create") { createFolder(named: newFolderName) }
+        }
+        .alert("Rename Folder", isPresented: $showingRenameFolderPrompt) {
+            TextField("Name", text: $renameFolderText)
+            Button("Cancel", role: .cancel) { renameFolderPid = nil }
+            Button("Save") {
+                if let pid = renameFolderPid, !renameFolderText.isEmpty {
+                    applyPlaylistActions([.rename(containerPid: pid, newName: renameFolderText)])
+                }
+                renameFolderPid = nil
+            }
+        }
         .sheet(isPresented: $showingNewPlaylistPrompt) {
             PlaylistNamingView(title: "New Playlist", icon: "music.note.list", iconTint: Color(red: 1.0, green: 0.27, blue: 0.42)) { name, coverImageData in
                 guard !name.isEmpty else { return }
@@ -216,6 +237,9 @@ extension DeviceLibraryBrowserView {
                 if let idx = playlists.firstIndex(where: { $0.pid == containerPid }) {
                     playlists[idx].name = newName
                 }
+                if let folderIdx = manager.playlistFolders.firstIndex(where: { $0.pid == containerPid }) {
+                    manager.playlistFolders[folderIdx].name = newName
+                }
             case .removeSong(let containerPid, let itemPid):
                 if let idx = playlists.firstIndex(where: { $0.pid == containerPid }) {
                     playlists[idx].songs.removeAll { $0.itemPid == itemPid }
@@ -250,6 +274,17 @@ extension DeviceLibraryBrowserView {
                 manager.pinnedArtistNames.insert(name.lowercased())
             case .unpinArtist(let name):
                 manager.pinnedArtistNames.remove(name.lowercased())
+            case .createFolder(let containerPid, let name):
+                manager.playlistFolders.append(PlaylistFolderInfo(pid: containerPid, name: name))
+            case .movePlaylist(let containerPid, let folderPid):
+                if folderPid == 0 {
+                    manager.playlistParents.removeValue(forKey: containerPid)
+                } else {
+                    manager.playlistParents[containerPid] = folderPid
+                }
+            case .deleteFolder(let containerPid):
+                manager.playlistFolders.removeAll { $0.pid == containerPid }
+                manager.playlistParents = manager.playlistParents.filter { $0.value != containerPid }
             case .createNativeSmart:
                 break
             }
