@@ -8,65 +8,6 @@ enum FavoritesPlaylistResult {
     case failed(String)
 }
 
-enum FavoritesImportResult {
-    case imported(loved: Int, rated: Int, total: Int)
-    case failed(String)
-}
-
-// MARK: - Favorites Import
-extension DeviceManager {
-    /// Pulls the device's MediaLibrary and reads every loved/disliked/rated song
-    /// into the local DeviceFavoritesStore. Read-only — nothing is written back.
-    func importFavoritesFromDevice(progress: @escaping (String) -> Void, completion: @escaping (FavoritesImportResult) -> Void) {
-        DispatchQueue.global(qos: .userInitiated).async {
-            guard self.ensureActiveTransport(reason: "importing favorites") else {
-                completion(.failed("Device connection unavailable."))
-                return
-            }
-
-            progress("Reading favorites from device...")
-            guard let context = self.stageCurrentMediaLibraryForMutation(label: "favorites_import") else {
-                completion(.failed("Could not stage MediaLibrary.sqlitedb."))
-                return
-            }
-            defer { try? FileManager.default.removeItem(at: context.tempDir) }
-
-            var db: OpaquePointer?
-            guard sqlite3_open(context.dbURL.path, &db) == SQLITE_OK else {
-                if db != nil { sqlite3_close(db) }
-                completion(.failed("Could not open MediaLibrary.sqlitedb."))
-                return
-            }
-
-            progress("Importing favorites & ratings...")
-            let favorites: [DeviceFavorite]
-            do {
-                favorites = try MediaLibraryBuilder.readDeviceFavorites(db: db)
-                sqlite3_close(db)
-            } catch {
-                sqlite3_close(db)
-                Logger.shared.log("[DeviceManager] Favorites import failed: \(error)")
-                completion(.failed("Could not read favorites from the device."))
-                return
-            }
-
-            guard !favorites.isEmpty else {
-                completion(.failed("No favorited or rated songs found on this device."))
-                return
-            }
-
-            DispatchQueue.main.async {
-                DeviceFavoritesStore.shared.replaceAll(favorites)
-                completion(.imported(
-                    loved: favorites.filter(\.isLoved).count,
-                    rated: favorites.filter { $0.userRating > 0 }.count,
-                    total: favorites.count
-                ))
-            }
-        }
-    }
-}
-
 // MARK: - Favorites Playlist
 extension DeviceManager {
     func createFavoritesPlaylist(replaceExisting: Bool, progress: @escaping (String) -> Void, completion: @escaping (FavoritesPlaylistResult) -> Void) {

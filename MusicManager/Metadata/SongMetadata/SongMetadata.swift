@@ -53,12 +53,6 @@ struct SongMetadata: Identifiable {
     var playlistId: Int64 = 0
     var genreStoreId: Int64 = 0
     var explicitRating: Int = 0
-
-    /// Apple Music loved/disliked state as stored in `item_stats.liked_state`.
-    /// 0 = none, 1 = disliked, 2 = loved (favorite), 3 = disliked/loved combined (rare).
-    var likedState: Int = 0
-    /// Star rating (0–5) as stored in `item_stats.user_rating`.
-    var userRating: Int = 0
     var copyright: String?
     var xid: String?
     var releaseDate: Int = 0

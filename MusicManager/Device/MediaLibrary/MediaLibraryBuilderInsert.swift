@@ -168,9 +168,6 @@ extension MediaLibraryBuilder {
             
             
             
-            // Preserve user-facing stats (favorites, ratings, play counts) when
-            // reusing an existing PID, since deleteItemRows wipes item_stats.
-            let preservedStats = readExistingItemStats(db: db, itemPid: itemPid)
             deleteItemRows(db: db, pid: itemPid, tables: ["item", "item_extra", "item_playback", "item_stats", "item_store", "item_search"])
             
             
@@ -237,31 +234,7 @@ extension MediaLibraryBuilder {
             """)
             
             
-            // item_stats: write explicit liked_state/user_rating from metadata when
-            // set, otherwise keep whatever the device already had (resurrected PIDs).
-            // liked_state: 0 none, 1 disliked, 2 loved (favorite). user_rating: 0-5.
-            let likedState = song.likedState > 0 ? song.likedState : preservedStats.likedState
-            let userRating = song.userRating > 0 ? song.userRating : preservedStats.userRating
-            let likedStateChanged = likedState > 0 ? 1 : 0
-            // liked_state_changed_date uses Apple reference date (2001-01-01) in this table.
-            let likedStateChangedDate = (likedState > 0 && likedState != preservedStats.likedState)
-                ? Date().timeIntervalSinceReferenceDate
-                : preservedStats.likedStateChangedDate
-            try executeSQL(db, """
-                INSERT OR REPLACE INTO item_stats (
-                    item_pid,
-                    liked_state, user_rating, liked_state_changed, liked_state_changed_date,
-                    play_count_user, play_count_recent, has_been_played, date_played,
-                    skip_count_user, skip_count_recent,
-                    date_accessed
-                ) VALUES (
-                    \(itemPid),
-                    \(likedState), \(userRating), \(likedStateChanged), \(likedStateChangedDate),
-                    \(preservedStats.playCountUser), \(preservedStats.playCountRecent), \(preservedStats.hasBeenPlayed), \(preservedStats.datePlayed),
-                    \(preservedStats.skipCountUser), \(preservedStats.skipCountRecent),
-                    \(now)
-                )
-            """)
+            try executeSQL(db, "INSERT OR REPLACE INTO item_stats (item_pid, date_accessed) VALUES (\(itemPid), \(now))")
             
             
             
@@ -746,59 +719,7 @@ extension MediaLibraryBuilder {
         Logger.shared.log("[MediaLibraryBuilder] Merged \(songs.count) new songs, \(collectedArtworkInfo.count) with artwork")
         return (insertedPids, collectedArtworkInfo)
     }
-
-    /// Reads the current item_stats row for a PID before it gets deleted, so
-    /// favorites, ratings and playback counters survive a re-injection.
-    /// Returns zeroed values when the song is brand new.
-    static func readExistingItemStats(db: OpaquePointer?, itemPid: Int64) -> (
-        likedState: Int, userRating: Int, likedStateChanged: Int, likedStateChangedDate: Double,
-        playCountUser: Int, playCountRecent: Int, hasBeenPlayed: Int, datePlayed: Double,
-        skipCountUser: Int, skipCountRecent: Int
-    ) {
-        struct Result {
-            var likedState = 0
-            var userRating = 0
-            var likedStateChanged = 0
-            var likedStateChangedDate = 0.0
-            var playCountUser = 0
-            var playCountRecent = 0
-            var hasBeenPlayed = 0
-            var datePlayed = 0.0
-            var skipCountUser = 0
-            var skipCountRecent = 0
-        }
-        var result = Result()
-
-        var stmt: OpaquePointer?
-        let sql = """
-            SELECT IFNULL(liked_state, 0), IFNULL(user_rating, 0), IFNULL(liked_state_changed, 0),
-                   IFNULL(liked_state_changed_date, 0), IFNULL(play_count_user, 0), IFNULL(play_count_recent, 0),
-                   IFNULL(has_been_played, 0), IFNULL(date_played, 0), IFNULL(skip_count_user, 0),
-                   IFNULL(skip_count_recent, 0)
-            FROM item_stats WHERE item_pid = ? LIMIT 1
-        """
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
-            sqlite3_finalize(stmt)
-            return (result.likedState, result.userRating, result.likedStateChanged, result.likedStateChangedDate,
-                    result.playCountUser, result.playCountRecent, result.hasBeenPlayed, result.datePlayed,
-                    result.skipCountUser, result.skipCountRecent)
-        }
-        defer { sqlite3_finalize(stmt) }
-        sqlite3_bind_int64(stmt, 1, itemPid)
-        if sqlite3_step(stmt) == SQLITE_ROW {
-            result.likedState = Int(sqlite3_column_int(stmt, 0))
-            result.userRating = Int(sqlite3_column_int(stmt, 1))
-            result.likedStateChanged = Int(sqlite3_column_int(stmt, 2))
-            result.likedStateChangedDate = sqlite3_column_double(stmt, 3)
-            result.playCountUser = Int(sqlite3_column_int(stmt, 4))
-            result.playCountRecent = Int(sqlite3_column_int(stmt, 5))
-            result.hasBeenPlayed = Int(sqlite3_column_int(stmt, 6))
-            result.datePlayed = sqlite3_column_double(stmt, 7)
-            result.skipCountUser = Int(sqlite3_column_int(stmt, 8))
-            result.skipCountRecent = Int(sqlite3_column_int(stmt, 9))
-        }
-        return (result.likedState, result.userRating, result.likedStateChanged, result.likedStateChangedDate,
-                result.playCountUser, result.playCountRecent, result.hasBeenPlayed, result.datePlayed,
-                result.skipCountUser, result.skipCountRecent)
-    }
+    
+    
+    
 }
