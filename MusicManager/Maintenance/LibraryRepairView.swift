@@ -10,6 +10,8 @@ struct LibraryRepairView: View {
     @State private var isCreatingFavorites = false
     @State private var isFixingFavorites = false
     @State private var isDeletingFavorites = false
+    @State private var isImportingFavorites = false
+    @State private var showingImportedFavorites = false
     @State private var showingDeleteFavoritesAlert = false
     @State private var showingReplaceFavoritesAlert = false
     @State private var isRebuildingAlbumArtwork = false
@@ -270,6 +272,64 @@ struct LibraryRepairView: View {
 
                         HStack {
                             Button {
+                                importFavoritesFromDevice()
+                            } label: {
+                                HStack {
+                                    if isImportingFavorites {
+                                        ProgressView()
+                                            .frame(width: 28)
+                                    } else {
+                                        Image(systemName: "square.and.arrow.down")
+                                            .font(.body)
+                                            .foregroundColor(.primary)
+                                            .frame(width: 28)
+                                    }
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(isImportingFavorites ? "Importing Favorites..." : "Import Favorites & Ratings")
+                                            .font(.body)
+                                            .foregroundColor(.primary)
+                                        Text("Copy loves, dislikes and star ratings from Music into ByeTunes.")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                            .multilineTextAlignment(.leading)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(isImportingFavorites || !manager.heartbeatReady)
+
+                            Spacer()
+
+                            Button {
+                                showInfo(
+                                    "Import Favorites & Ratings",
+                                    "Reads every song you loved, disliked or rated in the Music app and saves it in ByeTunes. Re-injecting those songs keeps their hearts and ratings, since favorites are no longer wiped when a song is refreshed."
+                                )
+                            } label: {
+                                infoButton
+                            }
+                            .buttonStyle(.plain)
+
+                            if !isImportingFavorites {
+                                Button {
+                                    showingImportedFavorites = true
+                                } label: {
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption)
+                                        .foregroundColor(Color(.systemGray3))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.vertical, 14)
+                        .padding(.horizontal, 16)
+                        .opacity((isImportingFavorites || !manager.heartbeatReady) ? 0.55 : 1)
+
+                        Divider().padding(.leading, 56)
+
+                        HStack {
+                            Button {
                                 showingDeleteFavoritesAlert = true
                             } label: {
                                 HStack {
@@ -460,7 +520,7 @@ struct LibraryRepairView: View {
                 .zIndex(100)
             }
 
-            if isFixingArtwork || isRebuildingAlbumArtwork || isRunningRepairDoctor || isFixingAlphabeticalOrder || isCreatingFavorites || isFixingFavorites || isDeletingFavorites {
+            if isFixingArtwork || isRebuildingAlbumArtwork || isRunningRepairDoctor || isFixingAlphabeticalOrder || isCreatingFavorites || isFixingFavorites || isDeletingFavorites || isImportingFavorites {
                 artworkFixPopup
                     .transition(.opacity.combined(with: .scale(scale: 0.97)))
             }
@@ -471,6 +531,9 @@ struct LibraryRepairView: View {
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isCreatingFavorites)
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isFixingFavorites)
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isDeletingFavorites)
+        .sheet(isPresented: $showingImportedFavorites) {
+            ImportedFavoritesView()
+        }
         .navigationTitle("Library Tools")
         .navigationBarTitleDisplayMode(.inline)
         .alert("Delete Favorites Playlist?", isPresented: $showingDeleteFavoritesAlert) {
@@ -691,6 +754,31 @@ struct LibraryRepairView: View {
                     title: success ? message : "Favorites Fix Failed: \(message)",
                     icon: success ? "heart.circle.fill" : "exclamationmark.triangle.fill"
                 )
+            }
+        }
+    }
+
+    private func importFavoritesFromDevice() {
+        isImportingFavorites = true
+        updateArtworkFixProgress("Importing favorites & ratings...")
+
+        manager.importFavoritesFromDevice { message in
+            DispatchQueue.main.async {
+                self.updateArtworkFixProgress(message)
+            }
+        } completion: { result in
+            DispatchQueue.main.async {
+                self.isImportingFavorites = false
+                switch result {
+                case .imported(let loved, let rated, let total):
+                    self.showToastMessage(
+                        title: "Imported \(total) song\(total == 1 ? "" : "s") — \(loved) loved, \(rated) rated.",
+                        icon: "heart.text.square.fill"
+                    )
+                case .failed(let message):
+                    guard !message.lowercased().contains("cancel") else { return }
+                    self.showToastMessage(title: "Favorites Import Failed: \(message)", icon: "exclamationmark.triangle.fill")
+                }
             }
         }
     }

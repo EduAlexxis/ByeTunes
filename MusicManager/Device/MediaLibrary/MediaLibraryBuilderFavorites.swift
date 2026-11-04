@@ -111,6 +111,54 @@ extension MediaLibraryBuilder {
         return fixed
     }
 
+    /// Reads every song the user loved/disliked or rated on the device,
+    /// straight from `item_stats` joined with titles/artist/album.
+    static func readDeviceFavorites(db: OpaquePointer?) throws -> [DeviceFavorite] {
+        let sql = """
+            SELECT i.item_pid,
+                   IFNULL(e.title, ''),
+                   IFNULL(ia.item_artist, ''),
+                   IFNULL(al.album, ''),
+                   IFNULL(s.liked_state, 0),
+                   IFNULL(s.user_rating, 0),
+                   IFNULL(s.play_count_user, 0),
+                   IFNULL(s.liked_state_changed_date, 0)
+            FROM item i
+            LEFT JOIN item_extra e ON e.item_pid = i.item_pid
+            LEFT JOIN item_stats s ON s.item_pid = i.item_pid
+            LEFT JOIN item_artist ia ON ia.item_artist_pid = i.item_artist_pid
+            LEFT JOIN album al ON al.album_pid = i.album_pid
+            WHERE IFNULL(s.liked_state, 0) > 0 OR IFNULL(s.user_rating, 0) > 0
+            ORDER BY e.title COLLATE NOCASE
+        """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            let error = String(cString: sqlite3_errmsg(db))
+            sqlite3_finalize(stmt)
+            throw MediaLibraryError.insertFailed("reading favorites: \(error)")
+        }
+        defer { sqlite3_finalize(stmt) }
+
+        var favorites: [DeviceFavorite] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let title = sqlite3_column_text(stmt, 1).map { String(cString: $0) } ?? ""
+            guard !title.isEmpty else { continue }
+            favorites.append(DeviceFavorite(
+                itemPid: sqlite3_column_int64(stmt, 0),
+                title: title,
+                artist: sqlite3_column_text(stmt, 2).map { String(cString: $0) } ?? "",
+                album: sqlite3_column_text(stmt, 3).map { String(cString: $0) } ?? "",
+                likedState: Int(sqlite3_column_int(stmt, 4)),
+                userRating: Int(sqlite3_column_int(stmt, 5)),
+                playCount: Int(sqlite3_column_int(stmt, 6)),
+                likedStateChangedDate: sqlite3_column_double(stmt, 7)
+            ))
+        }
+        Logger.shared.log("[MediaLibraryBuilder] Read \(favorites.count) favorited/rated songs from device library")
+        return favorites
+    }
+
     private static func hexData(_ hex: String) -> Data {
         var data = Data(capacity: hex.count / 2)
         var index = hex.startIndex
