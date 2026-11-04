@@ -242,6 +242,14 @@ extension DeviceLibraryBrowserView {
                 manager.pinnedPlaylistPids.insert(containerPid)
             case .unpin(let containerPid):
                 manager.pinnedPlaylistPids.remove(containerPid)
+            case .pinAlbum(let albumPid):
+                manager.pinnedAlbumPids.insert(albumPid)
+            case .unpinAlbum(let albumPid):
+                manager.pinnedAlbumPids.remove(albumPid)
+            case .pinArtist(let name):
+                manager.pinnedArtistNames.insert(name.lowercased())
+            case .unpinArtist(let name):
+                manager.pinnedArtistNames.remove(name.lowercased())
             case .createNativeSmart:
                 break
             }

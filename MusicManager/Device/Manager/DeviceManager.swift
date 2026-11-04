@@ -147,6 +147,8 @@ class DeviceManager: ObservableObject {
     // MARK: - Connection State
     @Published var heartbeatReady: Bool = false
     @Published var pinnedPlaylistPids: Set<Int64> = []
+    @Published var pinnedAlbumPids: Set<Int64> = []
+    @Published var pinnedArtistNames: Set<String> = []
     @Published var nativeSmartPlaylists: [NativeSmartPlaylist] = []
     @Published var connectionStatus: String = "Disconnected"
     @Published var hasValidExpectedPairingFile: Bool = false

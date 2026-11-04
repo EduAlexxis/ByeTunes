@@ -18,6 +18,10 @@ extension DeviceManager {
         case setCoverArtwork(containerPid: Int64, imageData: Data)
         case pin(containerPid: Int64)
         case unpin(containerPid: Int64)
+        case pinAlbum(albumPid: Int64)
+        case unpinAlbum(albumPid: Int64)
+        case pinArtist(name: String)
+        case unpinArtist(name: String)
         case createNativeSmart(containerPid: Int64, name: String, criteria: SmartCriteriaGroup, limit: SmartPlaylistLimit)
     }
 
@@ -42,7 +46,7 @@ extension DeviceManager {
     func applyPlaylistEdits(actions: [PlaylistAction], completion: @escaping (Bool, String) -> Void) {
         let changesPins = actions.contains { action in
             switch action {
-            case .pin, .unpin:
+            case .pin, .unpin, .pinAlbum, .unpinAlbum, .pinArtist, .unpinArtist:
                 return true
             default:
                 return false
@@ -60,7 +64,7 @@ extension DeviceManager {
     private func performPlaylistEdits(actions: [PlaylistAction], completion: @escaping (Bool, String) -> Void) {
         let changesPins = actions.contains { action in
             switch action {
-            case .pin, .unpin:
+            case .pin, .unpin, .pinAlbum, .unpinAlbum, .pinArtist, .unpinArtist:
                 return true
             default:
                 return false
@@ -110,9 +114,17 @@ extension DeviceManager {
                         try MediaLibraryBuilder.setPlaylistCoverArtwork(db: db, containerPid: containerPid, artworkToken: artworkToken, relativePath: relativePath)
                         pendingCoverUploads.append((remotePath: "/iTunes_Control/iTunes/Artwork/Originals/\(relativePath)", imageData: imageData))
                     case .pin(let pid):
-                        try MediaLibraryBuilder.pinPlaylist(db: db, containerPid: pid)
+                        try MediaLibraryBuilder.pinEntity(db: db, entityPid: pid, entityType: MediaLibraryBuilder.PinEntityType.playlist)
                     case .unpin(let pid):
-                        try MediaLibraryBuilder.unpinPlaylist(db: db, containerPid: pid)
+                        try MediaLibraryBuilder.unpinEntity(db: db, entityPid: pid, entityType: MediaLibraryBuilder.PinEntityType.playlist)
+                    case .pinAlbum(let pid):
+                        try MediaLibraryBuilder.pinEntity(db: db, entityPid: pid, entityType: MediaLibraryBuilder.PinEntityType.album)
+                    case .unpinAlbum(let pid):
+                        try MediaLibraryBuilder.unpinEntity(db: db, entityPid: pid, entityType: MediaLibraryBuilder.PinEntityType.album)
+                    case .pinArtist(let name):
+                        try MediaLibraryBuilder.pinArtist(db: db, name: name)
+                    case .unpinArtist(let name):
+                        try MediaLibraryBuilder.unpinArtist(db: db, name: name)
                     case .createNativeSmart(let containerPid, let name, let criteria, let limit):
                         try MediaLibraryBuilder.createNativeSmartPlaylist(db: db, containerPid: containerPid, name: name, criteria: criteria, limit: limit)
                     }

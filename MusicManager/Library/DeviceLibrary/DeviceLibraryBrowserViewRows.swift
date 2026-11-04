@@ -107,10 +107,17 @@ extension DeviceLibraryBrowserView {
                 artistArtworkView(artist)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(artist.name)
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(strongTextColor)
-                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(artist.name)
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundStyle(strongTextColor)
+                            .lineLimit(1)
+                        if manager.pinnedArtistNames.contains(artist.name.lowercased()) {
+                            Image(systemName: "pin.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(mutedTextColor)
+                        }
+                    }
                     Text("\(artist.songs.count) song\(artist.songs.count == 1 ? "" : "s")")
                         .font(.system(size: 13))
                         .foregroundStyle(mutedTextColor)
@@ -131,6 +138,21 @@ extension DeviceLibraryBrowserView {
                 loadArtworkIfNeeded(for: firstSong)
             }
         }
+        .contextMenu {
+            if manager.pinnedArtistNames.contains(artist.name.lowercased()) {
+                Button {
+                    applyPlaylistActions([.unpinArtist(name: artist.name)])
+                } label: {
+                    Label("Unpin from Music", systemImage: "pin.slash")
+                }
+            } else {
+                Button {
+                    applyPlaylistActions([.pinArtist(name: artist.name)])
+                } label: {
+                    Label("Pin to Music", systemImage: "pin")
+                }
+            }
+        }
     }
 
     func albumRow(_ album: AlbumEntry) -> some View {
@@ -147,10 +169,17 @@ extension DeviceLibraryBrowserView {
                 albumArtworkView(album)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(album.name)
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(strongTextColor)
-                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(album.name)
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundStyle(strongTextColor)
+                            .lineLimit(1)
+                        if album.albumPid > 0 && manager.pinnedAlbumPids.contains(album.albumPid) {
+                            Image(systemName: "pin.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(mutedTextColor)
+                        }
+                    }
                     Text(album.artist)
                         .font(.system(size: 13))
                         .foregroundStyle(mutedTextColor)
@@ -173,6 +202,23 @@ extension DeviceLibraryBrowserView {
         .onAppear {
             if let firstSong = album.songs.first {
                 loadArtworkIfNeeded(for: firstSong)
+            }
+        }
+        .contextMenu {
+            if album.albumPid > 0 {
+                if manager.pinnedAlbumPids.contains(album.albumPid) {
+                    Button {
+                        applyPlaylistActions([.unpinAlbum(albumPid: album.albumPid)])
+                    } label: {
+                        Label("Unpin from Music", systemImage: "pin.slash")
+                    }
+                } else {
+                    Button {
+                        applyPlaylistActions([.pinAlbum(albumPid: album.albumPid)])
+                    } label: {
+                        Label("Pin to Music", systemImage: "pin")
+                    }
+                }
             }
         }
     }
