@@ -9,7 +9,7 @@ struct AppUpdateInfo: Identifiable, Equatable {
 }
 
 enum AppUpdateChecker {
-    static let currentVersion = "2.6"
+    static let currentVersion = "2.7"
 
     private struct GitHubRelease: Decodable {
         let tagName: String
