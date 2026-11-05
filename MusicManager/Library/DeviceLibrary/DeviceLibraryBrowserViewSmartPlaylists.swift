@@ -18,10 +18,23 @@ extension DeviceLibraryBrowserView {
     func nativeSmartPlaylistRows() -> some View {
         ForEach(manager.nativeSmartPlaylists) { smart in
             NavigationLink(destination: nativeSmartPlaylistDetailView(smart, isOnDevice: true)) {
-                nativeSmartPlaylistRow(smart, subtitle: "Smart playlist · updates automatically")
+                nativeSmartPlaylistRow(smart, subtitle: "Smart playlist · updates automatically", isPinned: manager.pinnedPlaylistPids.contains(smart.pid))
             }
             .buttonStyle(.plain)
             .contextMenu {
+                if manager.pinnedPlaylistPids.contains(smart.pid) {
+                    Button {
+                        applyPlaylistActions([.unpin(containerPid: smart.pid)])
+                    } label: {
+                        Label("Unpin from Music", systemImage: "pin.slash")
+                    }
+                } else {
+                    Button {
+                        applyPlaylistActions([.pin(containerPid: smart.pid)])
+                    } label: {
+                        Label("Pin to Music", systemImage: "pin")
+                    }
+                }
                 if !isSavedInByeTunes(smart.pid) {
                     Button {
                         importNativeSmartPlaylist(smart)
@@ -70,7 +83,7 @@ extension DeviceLibraryBrowserView {
         }
     }
 
-    private func nativeSmartPlaylistRow(_ smart: NativeSmartPlaylist, subtitle: String) -> some View {
+    private func nativeSmartPlaylistRow(_ smart: NativeSmartPlaylist, subtitle: String, isPinned: Bool = false) -> some View {
         HStack(spacing: 16) {
             ZStack {
                 RoundedRectangle(cornerRadius: 8)
@@ -81,9 +94,17 @@ extension DeviceLibraryBrowserView {
                     .foregroundStyle(Color(red: 1.0, green: 0.27, blue: 0.42))
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text(smart.name)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(strongTextColor)
+                HStack(spacing: 6) {
+                    Text(smart.name)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(strongTextColor)
+                        .lineLimit(1)
+                    if isPinned {
+                        Image(systemName: "pin.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(mutedTextColor)
+                    }
+                }
                 Text(subtitle)
                     .font(.subheadline)
                     .foregroundStyle(mutedTextColor)
@@ -141,6 +162,19 @@ extension DeviceLibraryBrowserView {
                 .padding(14)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: 14).fill(controlFillColor))
+
+                if isOnDevice {
+                    PlaylistPinButton(
+                        manager: manager,
+                        playlistPid: smart.pid,
+                        isSyncing: $isSyncingPlaylists,
+                        textColor: strongTextColor,
+                        fillColor: controlFillColor,
+                        strokeColor: hairlineColor
+                    ) { isPinned in
+                        applyPlaylistActions([isPinned ? .unpin(containerPid: smart.pid) : .pin(containerPid: smart.pid)])
+                    }
+                }
 
                 if isOnDevice && !isSavedInByeTunes(smart.pid) {
                     smartPlaylistActionButton("Save to ByeTunes", icon: "square.and.arrow.down") {
