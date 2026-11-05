@@ -105,7 +105,7 @@ extension SongMetadata {
         Logger.shared.log("[SongMetadata] Performing full Apple Music fetch for: \(song.artist) - \(song.title)")
         let query = "\(song.artist) \(song.title)"
 
-        if let amsMatch = await AppleMusicAPI.shared.searchSong(query: query, albumHint: song.album, titleHint: song.title, requireAlbumMatch: requireAlbumMatch) {
+        if let amsMatch = await AppleMusicAPI.shared.searchSong(query: query, albumHint: song.album, titleHint: song.title, artistHint: song.artist, durationHintMs: song.durationMs, requireAlbumMatch: requireAlbumMatch) {
             let enriched = await applyAppleMusicMatch(amsMatch, to: song)
             Logger.shared.log("[SongMetadata] ✓ Apple Music match (\(enriched.appleMetadataMatchTier)): \(enriched.title) (\(enriched.storeId))")
             return enriched
@@ -132,7 +132,7 @@ extension SongMetadata {
         let query = "\(song.artist) \(song.title)"
         Logger.shared.log("[SongMetadata] 🔍 Shadow-searching Apple Music for rich metadata: '\(query)'")
 
-        if let amsMatch = await AppleMusicAPI.shared.searchSong(query: query, albumHint: song.album, titleHint: song.title) {
+        if let amsMatch = await AppleMusicAPI.shared.searchSong(query: query, albumHint: song.album, titleHint: song.title, artistHint: song.artist, durationHintMs: song.durationMs) {
             Logger.shared.log("[SongMetadata] ✨ Found Apple Music Server Match: \(amsMatch.attributes.name) by \(amsMatch.attributes.artistName) (ID: \(amsMatch.id))")
             let enriched = await applyAppleMusicMatch(amsMatch, to: song)
             Logger.shared.log("[SongMetadata] ✨ Rich Apple metadata tier: \(enriched.appleMetadataMatchTier) for \(enriched.title)")

@@ -260,7 +260,7 @@ actor AppleMusicAPI {
         return await searchSongsViaPublicSearch(query: query, limit: limit, offset: offset)
     }
 
-    func searchSong(query: String, albumHint: String? = nil, titleHint: String? = nil, requireAlbumMatch: Bool = false) async -> AppleMusicSong? {
+    func searchSong(query: String, albumHint: String? = nil, titleHint: String? = nil, artistHint: String? = nil, durationHintMs: Int = 0, requireAlbumMatch: Bool = false) async -> AppleMusicSong? {
         let hasAlbumHint = albumHint.map { !$0.isEmpty && $0 != "Unknown Album" } ?? false
         let hasTitleHint = titleHint.map { !Self.titleKey($0).isEmpty } ?? false
         let candidates: [AppleMusicSong]
@@ -272,7 +272,7 @@ actor AppleMusicAPI {
             candidates = await searchSongs(query: query, limit: 1, offset: 0)
         }
 
-        guard let song = Self.bestMatch(for: candidates, albumHint: albumHint, titleHint: titleHint, requireAlbumMatch: requireAlbumMatch) else {
+        guard let song = Self.bestMatch(for: candidates, albumHint: albumHint, titleHint: titleHint, artistHint: artistHint, durationHintMs: durationHintMs, requireAlbumMatch: requireAlbumMatch) else {
             return nil
         }
 
@@ -307,7 +307,92 @@ actor AppleMusicAPI {
             .joined(separator: " ")
     }
 
-    private static func bestMatch(for candidates: [AppleMusicSong], albumHint: String?, titleHint: String?, requireAlbumMatch: Bool = false) -> AppleMusicSong? {
+    private static func sanitizedSearchTerm(_ query: String) -> String {
+        query
+            .replacingOccurrences(of: #"[\[\]{}<>]"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static let alternateVersionMarkers = [
+        "instrumental", "karaoke", "acapella", "a cappella", "tv size", "tv version",
+        "sped up", "slowed", "reverb", "nightcore", "8d audio", "demo", "live",
+        "remix", "acoustic", "english version"
+    ]
+
+    private static func isAlternateVersion(_ candidateName: String, hint: String?) -> Bool {
+        let candidateKey = " " + fullTitleKey(candidateName) + " "
+        let hintKey = " " + fullTitleKey(hint ?? "") + " "
+        return alternateVersionMarkers.contains { marker in
+            let padded = " \(marker) "
+            return candidateKey.contains(padded) && !hintKey.contains(padded)
+        }
+    }
+
+    private static let durationToleranceMs = 2500
+
+    private static func isDurationClose(_ candidateMs: Int?, _ hintMs: Int) -> Bool {
+        guard let candidateMs, candidateMs > 0 else { return false }
+        return abs(candidateMs - hintMs) <= durationToleranceMs
+    }
+
+    private static func artistMatches(_ hint: String, _ candidate: String) -> Bool {
+        let candidateKey = fullTitleKey(candidate)
+        guard !candidateKey.isEmpty else { return false }
+        let separators = CharacterSet(charactersIn: ",&;/")
+        let parts = hint
+            .replacingOccurrences(of: " feat.", with: ",", options: .caseInsensitive)
+            .replacingOccurrences(of: " ft.", with: ",", options: .caseInsensitive)
+            .components(separatedBy: separators)
+            .map { fullTitleKey($0) }
+            .filter { $0.count >= 2 }
+        return parts.contains { part in
+            part == candidateKey || candidateKey.contains(part) || part.contains(candidateKey)
+        }
+    }
+
+    private static func bestMatch(for candidates: [AppleMusicSong], albumHint: String?, titleHint: String?, artistHint: String? = nil, durationHintMs: Int = 0, requireAlbumMatch: Bool = false) -> AppleMusicSong? {
+        var ordered = candidates
+        if let artistHint, !artistHint.isEmpty {
+            let byArtist = ordered.filter { artistMatches(artistHint, $0.attributes.artistName) }
+            if !byArtist.isEmpty { ordered = byArtist }
+        }
+        if durationHintMs > 0 {
+            let close = ordered.filter { isDurationClose($0.attributes.durationInMillis, durationHintMs) }
+            let far = ordered.filter { !isDurationClose($0.attributes.durationInMillis, durationHintMs) }
+            ordered = close + far
+        }
+        let standard = ordered.filter { !isAlternateVersion($0.attributes.name, hint: titleHint) }
+        let alternate = ordered.filter { isAlternateVersion($0.attributes.name, hint: titleHint) }
+        ordered = standard + alternate
+
+        if let strict = strictBestMatch(for: ordered, albumHint: albumHint, titleHint: titleHint, requireAlbumMatch: requireAlbumMatch) {
+            return strict
+        }
+
+        guard requireAlbumMatch, durationHintMs > 0, let artistHint, !artistHint.isEmpty,
+              let titleHint, !titleKey(titleHint).isEmpty else { return nil }
+        let hintKey = titleKey(titleHint)
+        let fallback = ordered.filter { candidate in
+            titleKey(candidate.attributes.name) == hintKey
+                && !isAlternateVersion(candidate.attributes.name, hint: titleHint)
+                && artistMatches(artistHint, candidate.attributes.artistName)
+                && isDurationClose(candidate.attributes.durationInMillis, durationHintMs)
+        }
+        if let albumHint, !albumHint.isEmpty, albumHint != "Unknown Album" {
+            let normalizedHint = fullTitleKey(albumHint)
+            if let albumMatch = fallback.first(where: { candidate in
+                guard let album = candidate.attributes.albumName else { return false }
+                let normalizedAlbum = fullTitleKey(album)
+                return normalizedAlbum.contains(normalizedHint) || normalizedHint.contains(normalizedAlbum)
+            }) {
+                return albumMatch
+            }
+        }
+        return fallback.first
+    }
+
+    private static func strictBestMatch(for candidates: [AppleMusicSong], albumHint: String?, titleHint: String?, requireAlbumMatch: Bool = false) -> AppleMusicSong? {
         let hintKey = titleHint.map { titleKey($0) } ?? ""
         let hintFullKey = titleHint.map { fullTitleKey($0) } ?? ""
         var pool = candidates
@@ -625,7 +710,7 @@ actor AppleMusicAPI {
     private func fetchPublicSearchSection(query: String, title: String) async -> [PublicSearchItem] {
         let region = UserDefaults.standard.string(forKey: "storeRegion")?.lowercased() ?? "us"
         var components = URLComponents(string: "https://music.apple.com/\(region)/search")!
-        components.queryItems = [URLQueryItem(name: "term", value: query), URLQueryItem(name: "l", value: "en")]
+        components.queryItems = [URLQueryItem(name: "term", value: Self.sanitizedSearchTerm(query)), URLQueryItem(name: "l", value: "en")]
         guard let url = components.url else { return [] }
 
         var request = URLRequest(url: url)
